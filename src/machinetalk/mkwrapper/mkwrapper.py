@@ -23,6 +23,7 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 
+from google.protobuf.message import DecodeError
 from message_pb2 import Container
 from config_pb2 import *
 from types_pb2 import *
@@ -492,8 +493,7 @@ class LinuxCNCWrapper():
 
         self.publish()
 
-        threading.Thread(target=self.process_sockets).start()
-        threading.Thread(target=self.poll).start()
+        threading.Thread(target=self.process_sockets, name="process_sockets").start()
         self.running = True
 
     def process_sockets(self):
@@ -501,15 +501,44 @@ class LinuxCNCWrapper():
         poll.register(self.statusSocket, zmq.POLLIN)
         poll.register(self.errorSocket, zmq.POLLIN)
         poll.register(self.commandSocket, zmq.POLLIN)
-
+    
+        next_poll = time.time() + self.pollInterval
+        polldelay = (self.pollInterval) * 1000 # convert to ms
         while not self.shutdown.is_set():
-            s = dict(poll.poll(1000))
+            s = dict(poll.poll(polldelay))
             if self.statusSocket in s and s[self.statusSocket] == zmq.POLLIN:
                 self.process_status(self.statusSocket)
             if self.errorSocket in s and s[self.errorSocket] == zmq.POLLIN:
                 self.process_error(self.errorSocket)
             if self.commandSocket in s and s[self.commandSocket] == zmq.POLLIN:
                 self.process_command(self.commandSocket)
+            
+            polldelay = (next_poll - time.time()) * 1000 # convert to ms
+            if (polldelay > 0):
+                continue
+
+            next_poll = time.time() + self.pollInterval
+            polldelay = (self.pollInterval) * 1000 # convert to ms
+
+            try:
+                if (self.statusServiceSubscribed):
+                    self.stat.poll()
+                    self.update_status(self.stat)
+                    if (self.pingCount == self.pingRatio):
+                        self.ping_status()
+                if (self.errorServiceSubscribed):
+                    error = self.error.poll()
+                    self.update_error(error)
+                    if (self.pingCount == self.pingRatio):
+                        self.ping_error()
+            except linuxcnc.error as detail:
+                printError(str(detail))
+                self.stop()
+
+            if (self.pingCount == self.pingRatio):
+                self.pingCount = 0
+            else:
+                self.pingCount += 1
 
         self.unpublish()
         self.running = False
@@ -1307,41 +1336,13 @@ class LinuxCNCWrapper():
         with self.commandLock:
             self.txCommand.type = type
             txBuffer = self.txCommand.SerializeToString()
-            self.commandSocket.send_multipart([identity, txBuffer], zmq.NOBLOCK)
+            self.commandSocket.send_multipart(identity + [txBuffer], zmq.NOBLOCK)
             self.txCommand.Clear()
 
     def add_pparams(self):
         parameters = ProtocolParameters()
         parameters.keepalive_timer = int(self.pingInterval * 1000.0)
         self.txStatus.pparams.MergeFrom(parameters)
-
-    def poll(self):
-        while not self.shutdown.is_set():
-            try:
-                if (self.statusServiceSubscribed):
-                    self.stat.poll()
-                    self.update_status(self.stat)
-                    if (self.pingCount == self.pingRatio):
-                        self.ping_status()
-
-                if (self.errorServiceSubscribed):
-                    error = self.error.poll()
-                    self.update_error(error)
-                    if (self.pingCount == self.pingRatio):
-                        self.ping_error()
-
-            except linuxcnc.error as detail:
-                printError(str(detail))
-                self.stop()
-
-            if (self.pingCount == self.pingRatio):
-                self.pingCount = 0
-            else:
-                self.pingCount += 1
-            time.sleep(self.pollInterval)
-
-        self.running = False
-        return
 
     def ping_status(self):
         if (self.ioSubscribed):
@@ -1369,7 +1370,8 @@ class LinuxCNCWrapper():
 
     def process_status(self, socket):
         try:
-            rc = socket.recv()
+            with self.statusLock:
+                rc = socket.recv()
             subscription = rc[1:]
             status = (rc[0] == "\x01")
 
@@ -1404,7 +1406,8 @@ class LinuxCNCWrapper():
 
     def process_error(self, socket):
         try:
-            rc = socket.recv()
+            with self.errorLock:
+                rc = socket.recv()
             subscription = rc[1:]
             status = (rc[0] == "\x01")
 
@@ -1437,8 +1440,8 @@ class LinuxCNCWrapper():
                 gcodes.append('G' + str(rawGCode / 10.0))
         return ' '.join(gcodes)
 
-    def send_command_wrong_params(self, identity):
-        self.txCommand.note.append("wrong parameters")
+    def send_command_wrong_params(self, identity, note="wrong parameters"):
+        self.txCommand.note.append(note)
         self.send_command_msg(identity, MT_ERROR)
 
     def command_completion_process(self, event):
@@ -1470,11 +1473,20 @@ class LinuxCNCWrapper():
                          args=(identity, ticket, )).start()
 
     def process_command(self, socket):
-        (identity, message) = socket.recv_multipart()
-        self.rx.ParseFromString(message)
+        with self.commandLock:
+            frames = socket.recv_multipart()
+            identity = frames[:-1]  # multipart id
+            message = frames[-1]  # last frame
 
         if self.debug:
             print("process command called, id: %s" % identity)
+
+        try:
+            self.rx.ParseFromString(message)
+        except DecodeError as e:
+            note = 'Protobuf Decode Error: ' + str(e)
+            self.send_command_wrong_params(identity, note=note)
+            return
 
         try:
             if self.rx.type == MT_PING:

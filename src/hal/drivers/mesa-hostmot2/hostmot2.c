@@ -112,7 +112,7 @@ static void hm2_write(void *void_hm2, long period) {
     hm2_sserial_prepare_tram_write(hm2, period);
     hm2_bspi_prepare_tram_write(hm2, period);
     hm2_watchdog_prepare_tram_write(hm2);
-    //UARTS need to be explicity handled by an external component
+    //UARTS and PktUARTS need to be explicity handled by an external component
     hm2_tram_write(hm2);
 
     // these usually do nothing
@@ -208,6 +208,25 @@ int hm2_get_uart(hostmot2_t** hm2, char *name){
     return -1;
 }
 
+EXPORT_SYMBOL_GPL(hm2_get_pktuart);
+int hm2_get_pktuart(hostmot2_t** hm2, char *name){
+    struct list_head *ptr;
+    int i;
+    list_for_each(ptr, &hm2_list) {
+        *hm2 = list_entry(ptr, hostmot2_t, list);
+        if ((*hm2)->pktuart.num_instances > 0) {
+            for (i = 0; i < (*hm2)->pktuart.num_instances ; i++) {
+                if (!strcmp((*hm2)->pktuart.instance[i].name, name)) {return i;}
+            }
+        }
+    }
+    return -1;
+}
+
+
+
+
+
 EXPORT_SYMBOL_GPL(hm2_get_sserial);
 // returns a pointer to a remote struct
 hm2_sserial_remote_t *hm2_get_sserial(hostmot2_t** hm2, char *name){
@@ -255,6 +274,8 @@ const char *hm2_get_general_function_name(int gtag) {
         case HM2_GTAG_BSPI:            return "Buffered SPI Interface";
         case HM2_GTAG_UART_RX:         return "UART Receive Channel";
         case HM2_GTAG_UART_TX:         return "UART Transmit Channel";
+        case HM2_GTAG_PKTUART_RX:      return "PktUART Receive Channel";
+        case HM2_GTAG_PKTUART_TX:      return "PktUART Transmit Channel";
         case HM2_GTAG_HM2DPLL:         return "Hostmot2 DPLL";
         default: {
             static char unknown[100];
@@ -324,6 +345,7 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
     hm2->config.stepgen_width = 2; // To avoid nasty surprises with table mode
     hm2->config.num_bspis = -1;
     hm2->config.num_uarts = -1;
+    hm2->config.num_pktuarts = -1;
     hm2->config.num_dplls = -1;
     hm2->config.num_leds = -1;
     hm2->config.enable_raw = 0;
@@ -418,6 +440,10 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
             token += 10;
             hm2->config.num_uarts = simple_strtol(token, NULL, 0);
 
+        } else if (strncmp(token, "num_pktuarts=", 13) == 0) {
+            token += 13;
+            hm2->config.num_pktuarts = simple_strtol(token, NULL, 0);
+
         } else if (strncmp(token, "num_leds=", 9) == 0) {
             token += 9;
             hm2->config.num_leds = simple_strtol(token, NULL, 0);
@@ -459,6 +485,7 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
     HM2_DBG("    num_stepgens=%d\n", hm2->config.num_stepgens);
     HM2_DBG("    num_bspis=%d\n", hm2->config.num_bspis);
     HM2_DBG("    num_uarts=%d\n", hm2->config.num_uarts);
+    HM2_DBG("    num_pktuarts=%d\n", hm2->config.num_pktuarts);
     HM2_DBG("    enable_raw=%d\n",   hm2->config.enable_raw);
     HM2_DBG("    firmware=%s\n",   hm2->config.firmware ? hm2->config.firmware : "(NULL)");
 
@@ -905,6 +932,11 @@ static int hm2_parse_module_descriptors(hostmot2_t *hm2) {
                 md_accepted = hm2_uart_parse_md(hm2, md_index);
                 break;
                 
+            case HM2_GTAG_PKTUART_RX:
+            case HM2_GTAG_PKTUART_TX:
+                md_accepted = hm2_pktuart_parse_md(hm2, md_index);
+                break;
+
             case HM2_GTAG_HM2DPLL:
                 md_accepted = hm2_dpll_parse_md(hm2, md_index);
                 break;
@@ -1159,7 +1191,7 @@ int hm2_register(hm2_lowlevel_io_t *llio, char *config_string) {
         goto fail0;
     }
 
-
+    llio->firmware = hm2->config.firmware;
 
     // NOTE: program_fpga will be NULL for 6i25 and 5i25 (and future cards 
     // with EPROM firmware, probably. 
@@ -1213,33 +1245,41 @@ int hm2_register(hm2_lowlevel_io_t *llio, char *config_string) {
             goto fail0;
         }
 
-        r = bitfile_parse_and_verify(fw, &bitfile);
-        if (r != 0) {
-            HM2_ERR("firmware %s fails verification, aborting hm2_register\n", hm2->config.firmware);
-            release_firmware(fw);
-            goto fail0;
-        }
-
-        HM2_INFO("firmware %s:\n", hm2->config.firmware);
-        HM2_INFO("    %s %s %s\n", bitfile.a.data, bitfile.c.data, bitfile.d.data);
-        HM2_INFO("    Part Name: %s\n", bitfile.b.data);
-        HM2_INFO("    FPGA Config: %d bytes\n", bitfile.e.size);
-
-        if (llio->fpga_part_number == NULL) {
-            HM2_ERR("llio did not provide an FPGA part number, cannot verify firmware part number\n");
-        } else {
-            if (strcmp(llio->fpga_part_number, (const char *) bitfile.b.data) != 0) {
-                HM2_ERR(
-                    "board has FPGA '%s', but the firmware in %s is for FPGA '%s'\n",
-                    llio->fpga_part_number,
-                    hm2->config.firmware,
-                    bitfile.b.data
-                );
-                release_firmware(fw);
-                r = -EINVAL;
-                goto fail0;
-            }
-        }
+	if (llio->verify_firmware == NULL) {
+	    r = bitfile_parse_and_verify(fw, &bitfile);
+	    if (r != 0) {
+		HM2_ERR("firmware %s fails verification, aborting hm2_register\n", hm2->config.firmware);
+		release_firmware(fw);
+		goto fail0;
+	    }
+	    HM2_INFO("firmware %s:\n", hm2->config.firmware);
+	    HM2_INFO("    %s %s %s\n", bitfile.a.data, bitfile.c.data, bitfile.d.data);
+	    HM2_INFO("    Part Name: %s\n", bitfile.b.data);
+	    HM2_INFO("    FPGA Config: %d bytes\n", bitfile.e.size);
+	    if (llio->fpga_part_number == NULL) {
+		HM2_ERR("llio did not provide an FPGA part number, cannot verify firmware part number\n");
+	    } else {
+		if (strcmp(llio->fpga_part_number, (const char *) bitfile.b.data) != 0) {
+		    HM2_ERR(
+			    "board has FPGA '%s', but the firmware in %s is for FPGA '%s'\n",
+			    llio->fpga_part_number,
+			    hm2->config.firmware,
+			    bitfile.b.data
+			    );
+		    release_firmware(fw);
+		    r = -EINVAL;
+		    goto fail0;
+		}
+	    }
+	} else {
+	    // custom verify
+	    r = llio->verify_firmware(llio, fw);
+	    if (r != 0) {
+		HM2_ERR("firmware %s fails custom verification, aborting hm2_register\n", hm2->config.firmware);
+		release_firmware(fw);
+		goto fail0;
+	    }
+	}
 
         if (llio->reset != NULL) {
             r = llio->reset(llio);
@@ -1250,7 +1290,7 @@ int hm2_register(hm2_lowlevel_io_t *llio, char *config_string) {
             }
         }
 
-        r = llio->program_fpga(llio, &bitfile);
+        r = llio->program_fpga(llio, &bitfile, fw);
         release_firmware(fw);
         if (r != 0) {
             HM2_ERR("failed to program fpga, aborting hm2_register\n");

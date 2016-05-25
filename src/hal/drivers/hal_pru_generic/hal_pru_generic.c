@@ -282,7 +282,7 @@ static void hpg_read(void *void_hpg, long period) {
     hal_pru_generic_t *hpg = void_hpg;
 
     hpg_stepgen_read(hpg, period);
-    hpg_encoder_read(hpg);
+    hpg_encoder_read(hpg, period);
 
 }
 
@@ -374,7 +374,7 @@ int assure_module_loaded(const char *module)
     }
     fclose(fd);
     HPG_DBG("loading module '%s'\n", module);
-    sprintf(line, "/sbin/modprobe %s", module);
+    rtapi_snprintf(line, sizeof(line), "/sbin/modprobe %s", module);
     if ((retval = system(line))) {
         HPG_ERR("ERROR: executing '%s'  %d - %s\n", line, errno, strerror(errno));
         return -1;

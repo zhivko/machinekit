@@ -217,6 +217,18 @@ static const char* hm2_get_pin_secondary_name(hm2_pin_t *pin) {
             }
             break;
 
+        case HM2_GTAG_PKTUART_RX:
+            switch (sec_pin) {
+                case 0x1: return "RX Data";
+            }
+            break;
+        case HM2_GTAG_PKTUART_TX:    
+            switch (sec_pin) {
+                case 0x1: return "TX Data";
+                case 0x2: return "Drv Enable";
+            }
+            break;
+
         case HM2_GTAG_DPLL: // Not Supported Currently
             switch (sec_pin) {
                 case 0x1: return "SynchIn";
@@ -242,13 +254,13 @@ static const char* hm2_get_pin_secondary_name(hm2_pin_t *pin) {
             switch (sec_pin) {
                 case 0x41: return "Strobe";
                 default:
-                    sprintf(unknown, "Data%02x",sec_pin - 1);
+                    rtapi_snprintf(unknown, sizeof(unknown),  "Data%02x",sec_pin - 1);
                     return unknown;
             }
             break;
 
         case HM2_GTAG_BINOSC: // Not Supported Currently
-             sprintf(unknown, "Out%02x",sec_pin -1);
+             rtapi_snprintf(unknown, sizeof(unknown), "Out%02x",sec_pin -1);
              return unknown;
              break;
 
@@ -281,11 +293,11 @@ static const char* hm2_get_pin_secondary_name(hm2_pin_t *pin) {
 
         case HM2_GTAG_TWIDDLER: // Not Supported Currently
              if (sec_pin < 0x20){
-                 sprintf(unknown, "In%02x", sec_pin - 1);
+                 rtapi_snprintf(unknown, sizeof(unknown), "In%02x", sec_pin - 1);
              } else if (sec_pin > 0xC0){
-                 sprintf(unknown, "IO%02x", sec_pin - 1);
+                 rtapi_snprintf(unknown, sizeof(unknown), "IO%02x", sec_pin - 1);
              } else {
-                 sprintf(unknown, "Out%02x", sec_pin - 1);
+                 rtapi_snprintf(unknown, sizeof(unknown), "Out%02x", sec_pin - 1);
              }
              return unknown;
              break;
@@ -586,6 +598,8 @@ void hm2_configure_pins(hostmot2_t *hm2) {
     hm2_pins_allocate_all(hm2, HM2_GTAG_BSPI,  hm2->bspi.num_instances);
     hm2_pins_allocate_all(hm2, HM2_GTAG_UART_RX,  hm2->uart.num_instances);
     hm2_pins_allocate_all(hm2, HM2_GTAG_UART_TX ,  hm2->uart.num_instances);
+    hm2_pins_allocate_all(hm2, HM2_GTAG_PKTUART_RX,  hm2->pktuart.num_instances);
+    hm2_pins_allocate_all(hm2, HM2_GTAG_PKTUART_TX ,  hm2->pktuart.num_instances);
     hm2_pins_allocate_all(hm2, HM2_GTAG_SMARTSERIAL,  hm2->sserial.num_instances);
     // muxed encoder gets the sel pins
     hm2_pins_allocate_all(hm2, HM2_GTAG_MUXED_ENCODER_SEL, hm2->encoder.num_instances);
