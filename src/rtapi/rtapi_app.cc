@@ -363,15 +363,48 @@ static void usrfunct_error(const int retval,
 		func.c_str(), s.c_str(), retval, strerror(-retval));
 }
 
-// split arg array into key=value, others
+// separate instance args of the legacy type (name=value)
+// from any other non-legacy params which should go into newinst argv
+//
+// given an args array like:
+// foo=bar baz=123 -- blah=fasel --foo=123 -c
+//
+// '--' is skipped and is the separator between legacy args
+// and any others passed to newinst as argc/argv
+//
+// the above arguments are split into
+// kvpairs:   foo=bar baz=123
+// leftovers:     blah=fasel --foo=123 -c
+//
+// scenario 2 - kv pairs followed by getop-style options:
+// foo=bar baz=123 --baz --fasel=123 -c blah=4711
+//
+// the above arguments are split into
+// kvpairs:   foo=bar baz=123
+// leftovers:  --baz --fasel=123 -c blah=4711
+//
+// i.e. any argument following an option starting with '--' is
+// treated as leftovers argument, even if it has a key=value syntax
+//
 static void separate_kv(pbstringarray_t &kvpairs,
-		    pbstringarray_t &leftovers,
-		    const pbstringarray_t &args)
+			pbstringarray_t &leftovers,
+			const pbstringarray_t &args)
 {
-    for(int i = 0; i < args.size(); i++) {
+    bool extra = false;
+    string prefix = "--";
+    for (int i = 0; i < args.size(); i++) {
         string s(args.Get(i));
 	remove_quotes(s);
-        if (s.find('=') == string::npos)
+	if (s == prefix) { // standalone separator '--'
+	    extra = true;
+	    continue; // skip this argument
+	}
+	// no separator, but an option starting with -- like '--foo'
+	// pass this, and any following arguments and options to leftovers
+	if (std::equal(prefix.begin(), prefix.end(), s.begin()))
+	    extra = true;
+
+        if (extra)
 	    leftovers.Add()->assign(s);
 	else
 	    kvpairs.Add()->assign(s);
@@ -622,6 +655,11 @@ static int do_load_cmd(int instance,
 // shut down the stack in reverse loading order
 static void exit_actions(int instance)
 {
+    void *w = modules["hal_lib"];
+    int (*exit_threads)(void) =
+		DLSYM<int(*)(void)>(w,"hal_exit_threads");
+    exit_threads();
+
     pb::Container reply;
     size_t index = loading_order.size() - 1;
     for(std::vector<std::string>::reverse_iterator rit = loading_order.rbegin();
@@ -920,14 +958,26 @@ static int rtapi_request(zloop_t *loop, zmq_pollitem_t *poller, void *arg)
 		pbreply.set_retcode(-1);
 		break;
 	    }
-	    int (*delete_thread)(const char *) =
-		DLSYM<int(*)(const char *)>(w,"hal_thread_delete");
-	    if (delete_thread == NULL) {
-		pbreply.add_note("symbol 'hal_thread_delete' not found in hal_lib");
-		pbreply.set_retcode(-1);
-		break;
+	    int retval;
+	    if (pbreq.rtapicmd().threadname() == "all") {
+		int (*exit_threads)(void) =
+		    DLSYM<int(*)(void)>(w,"hal_exit_threads");
+		if (exit_threads == NULL) {
+		    pbreply.add_note("symbol 'hal_exit_threads' not found in hal_lib");
+		    pbreply.set_retcode(-1);
+		    break;
+		}
+		retval = exit_threads();
+	    } else {
+		int (*delete_thread)(const char *) =
+		    DLSYM<int(*)(const char *)>(w,"hal_thread_delete");
+		if (delete_thread == NULL) {
+		    pbreply.add_note("symbol 'hal_thread_delete' not found in hal_lib");
+		    pbreply.set_retcode(-1);
+		    break;
+		}
+		retval = delete_thread(pbreq.rtapicmd().threadname().c_str());
 	    }
-	    int retval = delete_thread(pbreq.rtapicmd().threadname().c_str());
 	    pbreply.set_retcode(retval);
 	}
 	break;

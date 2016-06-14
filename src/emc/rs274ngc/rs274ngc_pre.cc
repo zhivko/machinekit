@@ -2495,17 +2495,9 @@ int Interp::enter_remap(void)
     CONTROLLING_BLOCK(_setup).executing_remap = NULL;
 
     // remember the line where remap was discovered
-    if (_setup.remap_level == 1) {
-	logRemap("enter_remap: toplevel - saved_line_number=%d",_setup.sequence_number);
-	CONTROLLING_BLOCK(_setup).saved_line_number  =
-	    _setup.sequence_number;
-    } else {
-	logRemap("enter_remap into %d - saved_line_number=%d",
-		 _setup.remap_level,
-		 EXECUTING_BLOCK(_setup).saved_line_number);
-	CONTROLLING_BLOCK(_setup).saved_line_number  =
-	    EXECUTING_BLOCK(_setup).saved_line_number;
-    }
+    logRemap("enter_remap into %d - saved_line_number=%d",
+	     _setup.remap_level, _setup.sequence_number);
+    CONTROLLING_BLOCK(_setup).saved_line_number = _setup.sequence_number;
     _setup.sequence_number = 0;
     return INTERP_OK;
 }
@@ -2513,19 +2505,10 @@ int Interp::enter_remap(void)
 int Interp::leave_remap(void)
 {
     // restore the line number where remap was found
-    if (_setup.remap_level == 1) {
-	// dropping to top level, so pass onto _setup
-	_setup.sequence_number = CONTROLLING_BLOCK(_setup).saved_line_number;
-	logRemap("leave_remap into toplevel, restoring seqno=%d",_setup.sequence_number);
+    logRemap("leave_remap from %d propagate saved_line_number=%d",
+	     _setup.remap_level, CONTROLLING_BLOCK(_setup).saved_line_number);
 
-    } else {
-	// just dropping a nesting level
-	EXECUTING_BLOCK(_setup).saved_line_number =
-	    CONTROLLING_BLOCK(_setup).saved_line_number ;
-	logRemap("leave_remap from %d propagate saved_line_number=%d",
-		 _setup.remap_level,
-		 EXECUTING_BLOCK(_setup).saved_line_number);
-    }
+    _setup.sequence_number = CONTROLLING_BLOCK(_setup).saved_line_number;
     _setup.blocks[_setup.remap_level].executing_remap = NULL;
     _setup.remap_level--; // drop one nesting level
     if (_setup.remap_level < 0) {
@@ -2609,7 +2592,8 @@ FILE *Interp::find_ngc_file(setup_pointer settings,const char *basename, char *f
     return newFP;
 }
 
-static std::set<std::string> stringtable;
+
+static std::set<std::string>  stringtable;
 
 const char *strstore(const char *s)
 {
@@ -2617,8 +2601,13 @@ const char *strstore(const char *s)
 
     if (s == NULL)
         throw invalid_argument("strstore(): NULL argument");
-    pair< set<string>::iterator, bool > pair = stringtable.insert(s);
-    return string(*pair.first).c_str();
-}
 
+    std::set<std::string>::iterator it = stringtable.find(s);
+    if (it == stringtable.end()) {
+	std::string *p = new std::string(s);
+	stringtable.insert(*p);
+	return p->c_str();
+    }
+    return (*it).c_str();
+}
 
