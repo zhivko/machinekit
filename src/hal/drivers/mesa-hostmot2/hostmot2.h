@@ -132,6 +132,9 @@ char **argv_split(gfp_t gfp, const char *str, int *argcp);
 
 #define HM2_DPLL_SYNC_REG           0x7600
 
+#define HM2_FWID_BASE               0xF800
+#define HM2_FWID_MAXLEN             2048
+#define HM2_FWID_COOKIE             0xFEEDBABE
 
 //
 // Pin Descriptor constants
@@ -183,7 +186,7 @@ char **argv_split(gfp_t gfp, const char *str, int *argcp);
 #define HM2_GTAG_RESOLVER          (192)
 #define HM2_GTAG_SMARTSERIAL       (193)
 #define HM2_GTAG_TWIDDLER          (194) // Not supported
-
+#define HM2_GTAG_FWID              (248)
 
 
 //
@@ -311,10 +314,9 @@ typedef struct {
 
 #define HM2_ENCODER_CONTROL_MASK  (0x0000ffff)
 
-
-#define hm2_encoder_get_reg_count(hm2, instance)     (hm2->encoder.counter_reg[instance] & 0x0000ffff)
-#define hm2_encoder_get_reg_timestamp(hm2, instance) ((hm2->encoder.counter_reg[instance] >> 16) & 0x0000ffff)
-#define hm2_encoder_get_reg_tsc(hm2)                 ((*hm2->encoder.timestamp_count_reg) & 0xFFFF)
+#define hm2_encoder_get_reg_count(encoder, instance)     (encoder->counter_reg[instance] & 0x0000ffff)
+#define hm2_encoder_get_reg_timestamp(encoder, instance) ((encoder->counter_reg[instance] >> 16) & 0x0000ffff)
+#define hm2_encoder_get_reg_tsc(encoder)                 ((*encoder->timestamp_count_reg) & 0xFFFF)
 
 
 typedef struct {
@@ -617,14 +619,11 @@ typedef struct {
             hal_float_t *Cvalue;
             hal_bit_t *fault;
             hal_bit_t *enable;
+            hal_float_t *scale;
+            hal_float_t *deadzone;
+            hal_bit_t *faultpolarity;
+            hal_float_t *sampletime;
         } pin;
-
-        struct {
-            hal_float_t scale;
-            hal_float_t deadzone;
-            hal_bit_t faultpolarity;
-            hal_float_t sampletime;
-        } param;
 
     } hal;
 
@@ -639,8 +638,8 @@ typedef struct {
 
 typedef struct {
     struct {
-        hal_u32_t pwm_frequency; // One PWM rate for all instances
-    } param;
+        hal_u32_t *pwm_frequency; // One PWM rate for all instances
+    } pin;
 } hm2_tp_pwmgen_global_hal_t;
 
 typedef struct {
@@ -732,22 +731,21 @@ typedef struct {
             hal_float_t *dbg_err_at_match;
             hal_s32_t *dbg_step_rate;
             hal_float_t *dbg_pos_minus_prev_cmd;
-        } pin;
 
-        struct {
-            hal_float_t position_scale;
-            hal_float_t maxvel;
-            hal_float_t maxaccel;
 
-            hal_u32_t steplen;
-            hal_u32_t stepspace;
-            hal_u32_t dirsetup;
-            hal_u32_t dirhold;
+            hal_float_t *position_scale;
+            hal_float_t *maxvel;
+            hal_float_t *maxaccel;
 
-            hal_u32_t step_type;
-            hal_u32_t table[5]; // the Fifth Element is used as a very crude hash
-        } param;
+            hal_u32_t *steplen;
+            hal_u32_t *stepspace;
+            hal_u32_t *dirsetup;
+            hal_u32_t *dirhold;
 
+            hal_u32_t *step_type;
+            hal_u32_t *table[4];
+	} pin;
+	hal_u32_t table_hash;  //  a very crude hash over hal.pin.table[0..3]
     } hal;
 
     // this variable holds the previous position command, for
@@ -946,10 +944,31 @@ typedef struct {
     u32 timer_34_written;
     u32 hm2_dpll_sync_addr;
     u32 *hm2_dpll_sync_reg;
+    u32 *phase_err_reg;
     u32 clock_frequency;
 
 } hm2_dpll_t ;
 
+//
+// irq
+//
+
+typedef struct {
+    hal_u32_t *desired_rate_nsec;
+    hal_u32_t *current_rate_nsec;
+    hal_u32_t *count;
+    hal_u32_t *missed;
+    hal_u32_t *write_errors;
+    hal_u32_t *read_errors;
+} hm2_irq_pins_t ;
+
+// in case this becomes a full module later
+typedef struct {
+    int num_instances;
+    hm2_irq_pins_t *pins;
+
+    int dpll_timer_num;
+} hm2_irq_t ;
 
 //
 // watchdog
@@ -1021,6 +1040,12 @@ typedef struct {
 
 } hm2_led_t ;
 
+struct _pb_Firmware;
+
+typedef struct {
+    struct _pb_Firmware *dmsg; // decoded protobuf message, nanopb format
+} hm2_fwid_t ;
+
 
 //
 // raw peek/poke access
@@ -1067,6 +1092,7 @@ typedef struct {
 
     struct {
         int num_encoders;
+        int num_mencoders;
         int num_absencs;
         struct list_head absenc_formats;
         int num_resolvers;
@@ -1083,6 +1109,7 @@ typedef struct {
         char sserial_modes[4][8];
         int enable_raw;
         char *firmware;
+	int skip_fwid;  // skip applying the fwid proto message if set
     } config;
 
     char config_name[HM2_CONFIGNAME_LENGTH + 1];
@@ -1098,6 +1125,9 @@ typedef struct {
 
     hm2_pin_t *pin;
     int num_pins;
+    // running count of encoders instantiated so far
+    // regardless of type (muxed or unmuxed)
+    int encoder_base;
 
     // this keeps track of all the tram entries
     struct list_head tram_read_entries;
@@ -1110,6 +1140,7 @@ typedef struct {
 
     // the hostmot2 "Functions"
     hm2_encoder_t encoder;
+    hm2_encoder_t muxed_encoder;
     hm2_absenc_t absenc;
     hm2_resolver_t resolver;
     hm2_pwmgen_t pwmgen;
@@ -1122,8 +1153,9 @@ typedef struct {
     hm2_ioport_t ioport;
     hm2_watchdog_t watchdog;
     hm2_dpll_t dpll;
+    hm2_irq_t irq;
     hm2_led_t led;
-
+    hm2_fwid_t fwid;
     hm2_raw_t *raw;
 
     struct list_head list;
@@ -1221,13 +1253,24 @@ void hm2_ioport_gpio_write(hostmot2_t *hm2);
 // encoder functions
 //
 
-int hm2_encoder_parse_md(hostmot2_t *hm2, int md_index);
-void hm2_encoder_tram_init(hostmot2_t *hm2);
-void hm2_encoder_process_tram_read(hostmot2_t *hm2, long l_period_ns);
-void hm2_encoder_write(hostmot2_t *hm2);
-void hm2_encoder_cleanup(hostmot2_t *hm2);
-void hm2_encoder_print_module(hostmot2_t *hm2);
-void hm2_encoder_force_write(hostmot2_t *hm2);
+int hm2_encoder_parse_md(hostmot2_t *hm2,
+			 hm2_encoder_t *encoder,
+			 int md_index,
+			 int num_encs);
+void hm2_encoder_tram_init(hostmot2_t *hm2,
+			   hm2_encoder_t *encoder);
+void hm2_encoder_process_tram_read(hostmot2_t *hm2,
+				   hm2_encoder_t *encoder,
+				   long l_period_ns);
+void hm2_encoder_write(hostmot2_t *hm2,
+		       hm2_encoder_t *encoder);
+void hm2_encoder_cleanup(hostmot2_t *hm2,
+			 hm2_encoder_t *encoder);
+void hm2_encoder_print_module(hostmot2_t *hm2,
+			      hm2_encoder_t *encoder,
+			      char *tag);
+void hm2_encoder_force_write(hostmot2_t *hm2,
+			     hm2_encoder_t *encoder);
 
 
 //
@@ -1373,6 +1416,13 @@ void hm2_dpll_process_tram_read(hostmot2_t *hm2, long period);
 void hm2_dpll_write(hostmot2_t *hm2, long period);
 
 //
+// irq functions
+//
+
+int hm2_irq_setup(hostmot2_t *hm2, long period);
+void hm2_irq_write(hostmot2_t *hm2);
+
+//
 // watchdog functions
 //
 
@@ -1394,6 +1444,14 @@ void hm2_watchdog_process_tram_read(hostmot2_t *hm2);
 int hm2_led_parse_md(hostmot2_t *hm2, int md_index);
 void hm2_led_write(hostmot2_t *hm2);
 void hm2_led_cleanup(hostmot2_t *hm2);
+
+
+//
+// Firmware ID functions
+//
+int hm2_fwid_parse_md(hostmot2_t *hm2, int md_index);
+void hm2_fwid_cleanup(hostmot2_t *hm2);
+
 
 //
 // the raw interface lets you peek and poke the hostmot2 instance from HAL

@@ -847,11 +847,6 @@ ifeq ($(USERMODE_PCI),yes)
 endif
 
 install-kernel-indep: install-dirs
-	$(FILE) ../man/man1/*.1 $(DESTDIR)$(mandir)/man1
-	$(FILE) ../man/man9/*.9 $(DESTDIR)$(mandir)/man9
-	$(FILE) $(filter-out %/skeleton.3hal, $(wildcard ../man/man3/*.3hal)) $(DESTDIR)$(mandir)/man3
-	$(FILE) $(filter-out %/skeleton.3rtapi, $(wildcard ../man/man3/*.3rtapi)) $(DESTDIR)$(mandir)/man3
-	$(FILE) $(filter-out %/skeleton.9comp, $(wildcard ../man/man9/*.9comp)) $(DESTDIR)$(mandir)/man9
 	$(FILE) objects/*.msg $(DESTDIR)$(tcldir)/msgs
 	$(EXE) ../scripts/realtime $(DESTDIR)$(bindir)
 	$(EXE) ../scripts/halrun $(DESTDIR)$(bindir)
@@ -929,6 +924,7 @@ ifeq ($(BUILD_EMCWEB),yes)
 endif
 	$(FILE) ../etc/linuxcnc/machinekit.ini $(DESTDIR)$(sysconfdir)/linuxcnc
 	$(EXE) ../bin/profile_axis $(DESTDIR)$(bindir)
+	$(EXE) ../bin/mank $(DESTDIR)$(bindir)
 
 ifeq ($(BUILD_PYTHON),yes)
 install-kernel-indep: install-python
@@ -940,6 +936,8 @@ install-python: install-dirs
 	$(DIR) $(DESTDIR)$(SITEPY)/gladevcp
 	$(DIR) $(DESTDIR)$(SITEPY)/stepconf
 	$(DIR) $(DESTDIR)$(SITEPY)/machinekit
+	$(DIR) $(DESTDIR)$(SITEPY)/machinetalk
+	$(DIR) $(DESTDIR)$(SITEPY)/machinetalk/protobuf
 	$(DIR) $(DESTDIR)$(SITEPY)/fdm
 	$(DIR) $(DESTDIR)$(datadir)/fdm/thermistor_tables
 	$(DIR) $(DESTDIR)$(SITEPY)/drivers
@@ -953,6 +951,8 @@ install-python: install-dirs
 	$(FILE) ../lib/python/stepconf/*.py $(DESTDIR)$(SITEPY)/stepconf
 	$(FILE) ../lib/python/machinekit/*.py $(DESTDIR)$(SITEPY)/machinekit/
 	$(FILE) ../lib/python/machinekit/*.so $(DESTDIR)$(SITEPY)/machinekit/
+	$(FILE) ../lib/python/machinetalk/*.py $(DESTDIR)$(SITEPY)/machinetalk/
+	$(FILE) ../lib/python/machinetalk/protobuf/*.py $(DESTDIR)$(SITEPY)/machinetalk/protobuf/
 	$(FILE) ../lib/python/fdm/*.py $(DESTDIR)$(SITEPY)/fdm
 	$(FILE) ../lib/python/drivers/*.py $(DESTDIR)$(SITEPY)/drivers
 	$(EXE) ../bin/stepconf $(DESTDIR)$(bindir)
@@ -1130,7 +1130,6 @@ EXTRA_CFLAGS = $(RTFLAGS) \
 	-I$(INCLUDE_PREFIX)/libnml/nml \
 	-I$(INCLUDE_PREFIX)/libnml/buffer \
 	-I$(INCLUDE_PREFIX)/libnml/posemath \
-	-I$(INCLUDE_PREFIX)/protobuf/nanopb \
 	-I$(INCLUDE_PREFIX)/rtapi \
 	-I$(INCLUDE_PREFIX)/hal/lib \
 	-I$(INCLUDE_PREFIX)/emc/nml_intf \
@@ -1138,6 +1137,7 @@ EXTRA_CFLAGS = $(RTFLAGS) \
 	-I$(INCLUDE_PREFIX)/emc/motion \
 	-I$(INCLUDE_PREFIX)/emc/tp \
 	-I$(INCLUDE_PREFIX)/machinetalk/nanopb \
+	-I$(INCLUDE_PREFIX)/machinetalk/build \
 	-DSEQUENTIAL_SUPPORT -DHAL_SUPPORT -DDYNAMIC_PLCSIZE -DRT_SUPPORT \
 	-DOLD_TIMERS_MONOS_SUPPORT -DMODBUS_IO_MASTER \
 	$(call cc-option,-mieee-fp) \
@@ -1275,8 +1275,7 @@ endif
 
 ifdef TARGET_PLATFORM_SOCFPGA
 ifeq ($(BUILD_SYS),user-dso)
-obj-$(CONFIG_HM2_SOC) += hm2_soc.o hm2_soc_ol.o
-hm2_soc-objs := hal/drivers/mesa-hostmot2/hm2_soc.o
+obj-$(CONFIG_HM2_SOC_OL) += hm2_soc_ol.o
 hm2_soc_ol-objs := hal/drivers/mesa-hostmot2/hm2_soc_ol.o
 endif
 endif
@@ -1289,18 +1288,21 @@ obj-$(CONFIG_PEPPER) += pepper.o
 pepper-objs := hal/components/pepper.o $(MATHSTUB)
 endif
 
+obj-m += hal_arm335xQEP.o
+hal_arm335xQEP-objs := hal/drivers/hal_arm335xQEP.o $(MATHSTUB)
+endif
+
+ifdef TARGET_PLATFORM_CHIP
+obj-$(CONFIG_HAL_GPIO) += hal_chip_gpio.o
+hal_chip_gpio-objs := hal/drivers/hal_chip_gpio.o hal/drivers/chip/mmap_gpio.o
+endif
+
 ifdef TARGET_PLATFORM_ZEDBOARD
 obj-$(CONFIG_HAL_GPIO) += hal_zed_gpio.o
 hal_zed_gpio-objs := hal/drivers/hal_zed_gpio.o
 obj-$(CONFIG_HAL_CAN) += hal_zed_can.o
 hal_zed_can-objs := hal/drivers/hal_zed_can.o
 endif
-
-obj-m += hal_arm335xQEP.o
-hal_arm335xQEP-objs := hal/drivers/hal_arm335xQEP.o $(MATHSTUB)
-
-endif
-
 
 # hal_pru_generic driver
 ifdef TARGET_PLATFORM_BEAGLEBONE
@@ -1368,7 +1370,9 @@ hostmot2-objs +=			  \
     hal/drivers/mesa-hostmot2/watchdog.o  \
     hal/drivers/mesa-hostmot2/pins.o	  \
     hal/drivers/mesa-hostmot2/dpll.o  \
+    hal/drivers/mesa-hostmot2/irq.o  \
     hal/drivers/mesa-hostmot2/led.o	  \
+    hal/drivers/mesa-hostmot2/fwid.o	  \
     hal/drivers/mesa-hostmot2/tram.o	  \
     hal/drivers/mesa-hostmot2/raw.o	  \
     hal/drivers/mesa-hostmot2/bitfile.o   \
@@ -1691,7 +1695,6 @@ endif
 ifdef TARGET_PLATFORM_SOCFPGA
 ifeq ($(BUILD_SYS),user-dso)
 $(RTLIBDIR)/hostmot2$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hostmot2-objs))
-$(RTLIBDIR)/hm2_soc$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hm2_soc-objs))
 $(RTLIBDIR)/hm2_soc_ol$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hm2_soc_ol-objs))
 endif
 endif
@@ -1708,6 +1711,9 @@ $(RTLIBDIR)/hal_arm335xQEP$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hal_arm335xQEP
 endif
 endif
 
+ifdef TARGET_PLATFORM_CHIP
+$(RTLIBDIR)/hal_chip_gpio$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hal_chip_gpio-objs))
+endif
 
 ifdef TARGET_PLATFORM_RASPBERRY
 $(RTLIBDIR)/hal_gpio$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hal_gpio-objs))
@@ -1767,7 +1773,7 @@ endif  # build kernel RTAPI modules
 NOTAGSIN := \
 	depends \
 	objects \
-	machinetalk/generated \
+	machinetalk/build \
 	machinetalk/nanopb
 
 CTAGOPTS := $(addprefix --exclude=,$(NOTAGSIN))
@@ -1817,8 +1823,7 @@ swish:
 		$(dir $(BASEPWD))share/axis/tcl \
 		$(dir $(BASEPWD))lib/python \
 		$(dir $(BASEPWD))scripts \
-		$(dir $(BASEPWD))configs \
-		$(dir $(BASEPWD))man/man1
+		$(dir $(BASEPWD))configs
 
 # When you depend on objects/var-ZZZ you are depending on the contents of the
 # variable ZZZ, which is assumed to depend on a Makefile, a Submakefile, or
