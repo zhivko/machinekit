@@ -1,4 +1,4 @@
-component udp "Connects to laser esp8266 of laser distance sensor (ODSL 9/D26-450-S12 - Optical distance sensor)";
+component udp "UDP Server for esp8266 udp client, that connects via serial (rs232 57600baud) to laser distance sensor (ODSL 9/D26-450-S12 - Optical distance sensor)";
 
 //http://www.leuze.com/selector/ci_pages/downloads.php?supplier_aid=50111159&key=9f0f255e2c9fb97529e5d7196847f76a174a9a206b9ec072f3d0228255151e6f
 // to alow firewall on BBB to receive udp on 1234 port: sudo ufw allow 1234/udp
