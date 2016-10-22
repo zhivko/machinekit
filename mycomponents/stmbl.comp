@@ -1,0 +1,86 @@
+component stmbl "udp stuff";
+
+pin in float pos_cmd0;
+pin in float pos_cmd1;
+pin in float pos_cmd2;
+
+pin out float pos_fb0;
+pin out float pos_fb1;
+pin out float pos_fb2;
+
+variable int sockfd;
+function calc;
+option extra_setup yes;
+license "GPL";
+;;
+
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+
+EXTRA_SETUP(){
+	rtapi_print("hallo\n");
+
+	int ret;
+
+	sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+	if (sockfd < 0) {
+		rtapi_print("ERROR: can't open socket: %s\n", strerror(errno));
+		return -errno;
+	}
+
+	struct sockaddr_in server_addr;
+	struct sockaddr_in local_addr;
+
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(27181);
+	server_addr.sin_addr.s_addr = inet_addr("192.168.1.150");
+
+	local_addr.sin_family      = AF_INET;
+	local_addr.sin_addr.s_addr = INADDR_ANY;
+
+	ret = connect(sockfd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_in));
+	if (ret < 0) {
+		rtapi_print("ERROR: can't connect: %s\n", strerror(errno));
+		return -errno;
+	}
+
+   
+
+	struct timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 10;
+
+	ret = setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+	if (ret < 0) {
+		rtapi_print("ERROR: can't set socket option: %s\n", strerror(errno));
+		return -errno;
+	}
+
+	timeout.tv_usec = 10;
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+	if (ret < 0) {
+		rtapi_print("ERROR: can't set socket option: %s\n", strerror(errno));
+		return -errno;
+	}
+
+
+	return 0;
+}
+
+FUNCTION(calc){
+	pos_fb0 = pos_cmd0;
+	pos_fb1 = pos_cmd1;
+	pos_fb2 = pos_cmd2;
+	uint8_t buf[16];
+
+	buf[0] = 0x01;
+	buf[1] = 0x42;
+	buf[2] = 0x00;
+	buf[3] = 0x01;
+
+	int ret = send(sockfd,buf,4,0);
+	if (ret < 0) {
+		rtapi_print("send fail %s\n", strerror(errno));
+	}
+}
+

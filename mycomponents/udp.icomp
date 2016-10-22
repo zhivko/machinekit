@@ -1,0 +1,243 @@
+component udp "Connects to laser esp8266 of laser distance sensor (ODSL 9/D26-450-S12 - Optical distance sensor)";
+
+//http://www.leuze.com/selector/ci_pages/downloads.php?supplier_aid=50111159&key=9f0f255e2c9fb97529e5d7196847f76a174a9a206b9ec072f3d0228255151e6f
+// to alow firewall on BBB to receive udp on 1234 port: sudo ufw allow 1234/udp
+// firewall on bbb: sudo iptables -A OUTPUT -p udp --dport 1234 -j ACCEPT
+
+
+pin out float distance;
+pin out bit touchOff;
+
+function _;
+
+option extra_inst_setup yes;
+option extra_cleanup yes;
+
+author "Klemen Živkovič";
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <pthread.h>
+#include <string.h>
+
+#define BUFSIZE 1024
+#define SERVER_PORT 1234
+
+int myPort;
+float sensDistMm=100.0;
+const char* myIp;
+float recValue;
+
+int shouldRun = 1;
+pthread_t pth;	// this is our thread identifier
+
+struct sockaddr_in server;
+
+/*
+int main() {
+	printf("start...\n");
+	char **argv = (char *[]){"ip=192.168.1.155", "port=1234"};
+
+	EXTRA_INST_SETUP(NULL, "MyTest", 1, argv);
+	printf("end.\ns");
+}
+*/
+
+void *threadFunc(void *arg) {
+
+	int sockfd; /* socket */
+	int portno; /* port to listen on */
+	int clientlen; /* byte size of client's address */
+	struct sockaddr_in serveraddr; /* server's addr */
+	struct sockaddr_in clientaddr; /* client addr */
+	struct hostent *hostp; /* client host info */
+	char buf[BUFSIZE]; /* message buf */
+	char *hostaddrp; /* dotted decimal host addr string */
+	int optval; /* flag value for setsockopt */
+	int n; /* message byte size */
+
+	printf("\tThread starting...\n");
+	/*
+	 * socket: create the parent socket
+	 */
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	printf("\tsocket no: %d\n",sockfd);
+
+	if (sockfd < 0)
+		printf("ERROR opening socket");
+
+	/* setsockopt: Handy debugging trick that lets
+	 * us rerun the server immediately after we kill it;
+	 * otherwise we have to wait about 20 secs.
+	 * Eliminates "ERROR on binding: Address already in use" error.
+	 */
+	optval = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *) &optval, sizeof(int));
+
+	/*
+	 * build the server's Internet address
+	 */
+	bzero((char *) &serveraddr, sizeof(serveraddr));
+	serveraddr.sin_family = AF_INET;
+	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serveraddr.sin_port = htons(SERVER_PORT);
+
+	/*
+	 * bind: associate the parent socket with a port
+	 */
+	if (bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0)
+		printf("ERROR on binding");
+
+	/*
+	 * main loop: wait for a datagram, then echo it
+	 */
+	clientlen = sizeof(clientaddr);
+	while (shouldRun) {
+
+		/*
+		 * recvfrom: receive a UDP datagram from a client
+		 */
+		bzero(buf, BUFSIZE);
+		n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
+		if (n < 0)
+		{
+		    error("ERROR in recvfrom");
+		}
+		else
+		{
+		  /*
+		    float f;
+		    memcpy(&f, &buf, sizeof(f));
+		    if(f>0.0f)
+		      recValue = f;
+		      
+		  */
+		  
+		  float f = atof(buf)/10.0f;
+		  recValue = f;
+		  
+		    printf("server received %d/%d bytes: %s distance: %4.2f\n", strlen(buf), n, buf, f);
+  
+		    /*
+		    //gethostbyaddr: determine who sent the datagram
+		    hostp = gethostbyaddr((const char *) &clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+		    if (hostp == NULL)
+			    error("ERROR on gethostbyaddr");
+		    hostaddrp = inet_ntoa(clientaddr.sin_addr);
+		    if (hostaddrp == NULL)
+			    error("ERROR on inet_ntoa\n");
+		    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+		    printf("server received %d/%d bytes: %s\n", strlen(buf), n, buf);
+
+		    //sendto: echo the input back to the client
+		    n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
+		    if (n < 0)
+			    error("ERROR in sendto");
+		    */
+		}
+	}
+	pthread_exit(NULL);
+}
+
+char** str_split(char* a_str, const char a_delim) {
+	char** result = 0;
+	size_t count = 0;
+	char* tmp = a_str;
+	char* last_comma = 0;
+	char delim[2];
+	delim[0] = a_delim;
+	delim[1] = 0;
+
+	/* Count how many elements will be extracted. */
+	while (*tmp) {
+		if (a_delim == *tmp) {
+			count++;
+			last_comma = tmp;
+		}
+		tmp++;
+	}
+
+	/* Add space for trailing token. */
+	count += last_comma < (a_str + strlen(a_str) - 1);
+
+	/* Add space for terminating null string so caller
+	 knows where the list of returned strings ends. */
+	count++;
+
+	result = malloc(sizeof(char*) * count);
+
+	if (result) {
+		size_t idx = 0;
+		char* token = strtok(a_str, delim);
+
+		while (token) {
+			*(result + idx++) = strdup(token);
+			token = strtok(0, delim);
+		}
+		*(result + idx) = 0;
+	}
+
+	return result;
+}
+
+EXTRA_INST_SETUP() {
+	printf("UDP Inst setup\n");
+	int x;
+
+	recValue = 5.5;
+	char** tokens;
+	char* parValue;
+	pthread_attr_t attr;
+
+	for (x = 0; x < argc; x++) {
+		//hal_print_msg(RTAPI_MSG_ERR,"argv[%d] = %s", x, argv[x]);
+		parValue = argv[x];
+		char *dupParValue = strdup(parValue);
+		tokens = str_split(dupParValue, "=");
+		if (tokens[0] == "ip")
+			myIp = (char*) (*(tokens + 1));
+		if (tokens[0] == "port")
+			myPort = atoi(*(tokens + 1));
+		if (tokens[0] == "sensDist")
+			sensDistMm = atof(*(tokens + 1));
+	}
+
+
+	pthread_create(&pth, NULL, threadFunc, "processing...");
+
+	/*
+	void *status;
+
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	pthread_create(&pth, &attr, threadFunc, "processing...");
+	pthread_join(pth, &status);
+
+
+	pthread_exit(NULL);
+	*/
+}
+
+FUNCTION( _) {
+    float minDIstance = 25.0;
+    distance = recValue;
+    if(distance>sensDistMm)
+	touchOff = 0;
+    else
+        touchOff = 1;
+}
+
+
+EXTRA_CLEANUP() {
+    shouldRun = 0;
+}
