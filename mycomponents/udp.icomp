@@ -8,6 +8,10 @@ component udp "UDP Server for esp8266 udp client, that connects via serial (rs23
 pin out float distance;
 pin out bit touchOff;
 
+//instanceparam string ip;
+//instanceparam int port = 1234;
+//instanceparam int sensDistMm = 100;
+
 function _;
 
 option extra_inst_setup yes;
@@ -20,7 +24,6 @@ license "GPL"; // indicates GPL v2 or later
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <string.h>
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -33,10 +36,12 @@ license "GPL"; // indicates GPL v2 or later
 #define BUFSIZE 1024
 #define SERVER_PORT 1234
 
-int myPort;
-float sensDistMm=100.0;
-const char* myIp;
 float recValue;
+
+float sensDistMm = 100.0;
+int myPort=1234;
+const char* myIp = "192.168.1.115";
+
 
 int shouldRun = 1;
 pthread_t pth;	// this is our thread identifier
@@ -66,7 +71,7 @@ void *threadFunc(void *arg) {
 	int optval; /* flag value for setsockopt */
 	int n; /* message byte size */
 
-	printf("\tThread starting...\n");
+	printf("\tThread starting...ip: %s port: %d distance: %4.2f\n", myIp, myPort, sensDistMm);
 	/*
 	 * socket: create the parent socket
 	 */
@@ -201,14 +206,16 @@ EXTRA_INST_SETUP() {
 
 	for (x = 0; x < argc; x++) {
 		//hal_print_msg(RTAPI_MSG_ERR,"argv[%d] = %s", x, argv[x]);
+		printf("argv[%d] = %s\n", x, argv[x]);
 		parValue = argv[x];
-		char *dupParValue = strdup(parValue);
+		const char *dupParValue = strdup(parValue);
 		tokens = str_split(dupParValue, "=");
+		printf("tokens[0] = %s\n", tokens[0]);
 		if (tokens[0] == "ip")
 			myIp = (char*) (*(tokens + 1));
 		if (tokens[0] == "port")
 			myPort = atoi(*(tokens + 1));
-		if (tokens[0] == "sensDist")
+		if (tokens[0] == "sensDistmm")
 			sensDistMm = atof(*(tokens + 1));
 	}
 
