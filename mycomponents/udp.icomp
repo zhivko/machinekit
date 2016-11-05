@@ -47,6 +47,7 @@ int shouldRun = 1;
 pthread_t pth;	// this is our thread identifier
 
 struct sockaddr_in server;
+int sockfd; /* socket */
 
 /*
 int main() {
@@ -60,7 +61,6 @@ int main() {
 
 void *threadFunc(void *arg) {
 
-	int sockfd; /* socket */
 	int portno; /* port to listen on */
 	int clientlen; /* byte size of client's address */
 	struct sockaddr_in serveraddr; /* server's addr */
@@ -247,4 +247,5 @@ FUNCTION( _) {
 
 EXTRA_CLEANUP() {
     shouldRun = 0;
+	close(sockfd);
 }
