@@ -137,11 +137,15 @@ modules:  userspace
 	        $(MAKE) modules threads=$(f);\
 	    )\
 	)
+
+ifeq ($(HAVE_KERNEL_THREADS),yes)
+    @test -f ../libexec/linuxcnc_module_helper -a \
+    	\( `stat -c %u ../libexec/linuxcnc_module_helper` -ne 0 -o \
+	    ! -u ../libexec/linuxcnc_module_helper \) \
+        && need_setuid=1; 
+endif
+
 ifeq ($(RUN_IN_PLACE)+$(BUILD_DRIVERS),yes+yes)
-	@test -f ../libexec/linuxcnc_module_helper -a \
-		\( `stat -c %u ../libexec/linuxcnc_module_helper` -ne 0 -o \
-		    ! -u ../libexec/linuxcnc_module_helper \) \
-	    && need_setuid=1; \
 	for f in $(filter-out %-kernel,$(BUILD_THREAD_FLAVORS)); do \
 	    test -f ../libexec/rtapi_app_$$f -a \
 		    \( 0`stat -c %u ../libexec/rtapi_app_$$f 2>/dev/null` \
@@ -160,10 +164,16 @@ OBJDIR := objects/$(RTDIR_EXT)
 DEPDIR := depends/$(RTDIR_EXT)
 RTLIBDIR := ../rtlib/$(RTDIR_EXT)
 
-DEP = $(1) -MM -MG -MT "$(2)" $(4) -o $(3).tmp && mv -f "$(3)".tmp "$(3)"
+DEP = $(1) $(CPPFLAGS) -MM -MG -MT "$(2)" $(4) -o $(3).tmp && \
+	mv -f "$(3)".tmp "$(3)"
 
-cc-option = $(shell if $(CC) $(CFLAGS) $(1) -S -o /dev/null -xc /dev/null \
-	     > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi ;)
+cc-option = $(shell \
+    if $(CC) $(CPPFLAGS) $(CFLAGS) $(1) -S -o /dev/null -xc /dev/null \
+	    > /dev/null 2>&1; then \
+	echo "$(1)"; \
+    else \
+	echo "$(2)"; \
+    fi ;)
 
 ifeq ($(KERNELRELEASE),)
 # When KERNELRELEASE is not defined, this is the userspace build.
@@ -257,10 +267,11 @@ SUBDIRS := \
 	emc \
 	emc/pythonplugin \
 	\
-	module_helper \
-	\
 	po \
 
+ifeq ($(HAVE_KERNEL_THREADS),yes)
+SUBDIRS += module_helper
+endif
 
 # moved to src/rtapi/Submakefile
 # ULAPISRCS := rtapi/$(RTPREFIX)_ulapi.c
@@ -352,7 +363,7 @@ endif
 # Each directory in $(INCLUDES) is passed as a -I directory when compiling.
 INCLUDE := $(patsubst %,-I%, $(INCLUDES))
 ifeq ($(BUILD_PYTHON),yes)
-INCLUDE += -I$(INCLUDEPY)
+INCLUDE += $(PYTHON_CPPFLAGS)
 endif
 
 # trap build errors by making it possible to compare configure SHA vs build SHA
@@ -380,9 +391,9 @@ CXXFLAGS := $(INCLUDE) $(CXXFLAGS) \
 	 -DGIT_BUILD_SHA=\"'$(GIT_BUILD_SHA)'\"
 
 ifeq ($(RUN_IN_PLACE),yes)
-LDFLAGS := -L$(LIB_DIR) -Wl,-rpath,$(LIB_DIR)
+LDFLAGS += -L$(LIB_DIR) -Wl,-rpath,$(LIB_DIR)
 else
-LDFLAGS := -Wl,-rpath-link,../lib
+LDFLAGS += -Wl,-rpath-link,../lib
 endif
 LDFLAGS += -Wl,--no-as-needed
 
@@ -391,7 +402,7 @@ $(sort $(CUSEROBJS)) : objects/%.o: %.c
 	$(ECHO) Compiling $<
 	@mkdir -p $(dir $@)
 	@rm -f $@
-	$(Q)$(CC) -c $(CFLAGS) $(EXTRAFLAGS) \
+	$(Q)$(CC) -c $(CPPFLAGS) $(CFLAGS) $(EXTRAFLAGS) \
 		-MP -MD -MF "${@:.o=.d}" -MT "$@" \
 		$< -o $@
 
@@ -408,7 +419,7 @@ $(sort $(CXXUSEROBJS)) : objects/%.o: %.cc
 	$(ECHO) Compiling $<
 	@mkdir -p $(dir $@)
 	@rm -f $@
-	$(Q)$(CXX) -c $(CXXFLAGS) $(EXTRAFLAGS) \
+	$(Q)$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $(EXTRAFLAGS) \
 		-MP -MD -MF "${@:.o=.d}" -MT "$@" \
 		$< -o $@
 
@@ -742,7 +753,9 @@ ifeq ($(HAVE_KERNEL_THREADS),yes)
 CHECK_KFLAV_SWITCH=-k
 endif
 setuid:
+ifeq ($(HAVE_KERNEL_THREADS),yes)
 	$(call fix_perms,../libexec/linuxcnc_module_helper)
+endif
 	$(call fix_perms,../libexec/pci_read)
 	$(call fix_perms,../libexec/pci_write)
 	$(foreach f,$(BUILD_THREAD_FLAVORS),\
@@ -1001,7 +1014,9 @@ endif
 
 install-kernel-dep: install-dirs
 	$(SETUID) ../libexec/rtapi_app_* $(DESTDIR)$(EMC2_LIBEXEC_DIR)
+ifeq ($(HAVE_KERNEL_THREADS),yes)
 	$(SETUID) ../libexec/linuxcnc_module_helper $(DESTDIR)$(EMC2_LIBEXEC_DIR)
+endif
 ifeq ($(BUILD_DRIVERS),yes)
 	$(SETUID) ../libexec/pci_write $(DESTDIR)$(EMC2_LIBEXEC_DIR)
 	$(SETUID) ../libexec/pci_read $(DESTDIR)$(EMC2_LIBEXEC_DIR)
@@ -1605,7 +1620,7 @@ $(RTLIBDIR)/%.so:
 	$(Q)$(LD) -d -r -o $(OBJDIR)/$*.tmp $^
 	@# use the .rtapi_export string table to generate a ld version script
 	@# explicitly defining the EXPORT_SYMBOL syms as global, and everything else as local:
-	$(Q)objcopy -j .rtapi_export -O binary $(OBJDIR)/$*.tmp $(OBJDIR)/$*.exported
+	$(Q)$(OBJCOPY) -j .rtapi_export -O binary $(OBJDIR)/$*.tmp $(OBJDIR)/$*.exported
 	$(Q)(echo '{ global : ';  tr -s '\0' <$(OBJDIR)/$*.exported | xargs -r0 printf '%s;\n' | grep .; echo 'local : * ; };') > $(OBJDIR)/$*.ver
 	@# link the final object using this version script:
 	$(Q)$(CC) -shared -Bsymbolic $(LDFLAGS) -Wl,--version-script,$(OBJDIR)/$*.ver -o $@ $^ $(EXTRA_LDFLAGS)
@@ -1615,14 +1630,14 @@ $(sort $(RTDEPS)): $(DEPDIR)/%.d: %.c
 	$(ECHO) Depending $<
 	$(Q)$(call DEP,$(CC),$@ \
 		$(patsubst depends/%.d,objects/%.o,$@),$@,$(OPT) \
-		$(DEBUG) $(EXTRA_CFLAGS) $<)
+		$(DEBUG) $(CPPFLAGS) $(EXTRA_CFLAGS) $<)
 
 # Rules to make .o (object) files
 $(sort $(RTOBJS)) : $(OBJDIR)/%.o : %.c $(DEPDIR)/%.d
 	$(ECHO) Compiling realtime $<
 	@rm -f $@
 	@mkdir -p $(dir $@)
-	$(Q)$(CC) -c $(OPT) $(DEBUG) $(EXTRA_CFLAGS) $< -o $@
+	$(Q)$(CC) -c $(CPPFLAGS) $(OPT) $(DEBUG) $(EXTRA_CFLAGS) $< -o $@
 
 endif # end BUILD_SYS=user-dso
 
