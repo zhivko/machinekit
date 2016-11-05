@@ -366,7 +366,7 @@ static int comp_id;
 
     print >>f, "RTAPI_TAG(HAL,HC_INSTANTIABLE);"
     if options.get("singleton"):
-        print >>f, "RTAPI_TAG(HAL,HC_SINGLETON);"
+        print "option singleton is deprecated"
     print >>f
 
     has_array = False
@@ -1085,12 +1085,12 @@ def adocument(filename, outfilename, frontmatter):
         print >>f, ""
         for _, name, fp, doc in finddocs('funct'):
             if name != None and name != "_":
-                print >>f, "*%s.N.%s.funct*" % (comp_name, name) ,
+                print >>f, "*%s.N.%s.funct*" % (comp_name, to_hal(name)) ,
             else :
                 print >>f, "*%s.N.funct*" % comp_name ,
     	    print >>f, "\n( OR"
             if name != None and name != "_":
-                print >>f, "*<newinstname>.%s.funct*"  % name ,
+                print >>f, "*<newinstname>.%s.funct*"  % to_hal(name) ,
             else :
                 print >>f, "*<newinstname>.funct*" ,
             if fp:
@@ -1106,7 +1106,7 @@ def adocument(filename, outfilename, frontmatter):
     print >>f, ""    
     for _, name, type, array, dir, doc, value in finddocs('pin'):
         print >>f, ""
-        print >>f, "*%s.N.%s*" % (comp_name, name),
+        print >>f, "*%s.N.%s*" % (comp_name, to_hal(name)),
         print >>f, type, dir,
         if array:
             sz = name.count("#")
@@ -1116,7 +1116,7 @@ def adocument(filename, outfilename, frontmatter):
 
 	print >>f, "( OR"
 
-        print >>f, "*<newinstname>.%s*" % name,
+        print >>f, "*<newinstname>.%s*" % to_hal(name),
         print >>f, type, dir,
         if array:
             sz = name.count("#")
@@ -1274,8 +1274,8 @@ def usage(exitval=0):
     print """%(name)s: Build, compile, and install Machinekit HAL components
 
 Usage:
-           %(name)s [--compile -c|--preprocess -p|--document -d|--view-doc -v] compfile...
-    [sudo] %(name)s [--install -i|--install-doc -j] compfile...
+           %(name)s [ --compile (-c) | --preprocess (-p) | --document (-d) | --view-doc (-v) ] compfile...
+    [sudo] %(name)s [ --install (-i) |--install-doc (-j) ] compfile...
            %(name)s --print-modinc
 """ % {'name': os.path.basename(sys.argv[0])}
     raise SystemExit, exitval
