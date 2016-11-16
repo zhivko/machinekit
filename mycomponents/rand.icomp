@@ -1,0 +1,19 @@
+component myrand;
+
+pin out float out;
+
+function _ nofp;
+
+description """
+Experimental rand function
+""";
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#include <unistd.h>
+
+FUNCTION(_) {
+	out = drand48();
+	return 0;
+}
+
