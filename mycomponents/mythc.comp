@@ -93,6 +93,7 @@ pin in float correction_vel "The amount of change in user units per period to mo
 // Global Variables
 variable float offset = 0.0;
 variable float last_z_in = 0.0;
+variable float z_pos_out1 = 0.0;
 
 function _;
 
@@ -102,7 +103,7 @@ function _;
 
 FUNCTION(_) {
     // convert encoder velocity to volts
-    volts = (encoder_vel - scale_offset) * vel_scale;
+    volts = round((encoder_vel - scale_offset) * vel_scale * 10.0)/10.0;
     if(volts < 0){volts = 0;} // make sure volts is not negative
     offset_value = offset;
 
@@ -112,10 +113,10 @@ FUNCTION(_) {
         else {vel_status =0;}
         
         if(torch_on && arc_ok && vel_status){ // allow correction
-            if((volts + voltage_tol) > volts_requested){
+            if((volts + voltage_tol) > volts_requested && (offset>-5 && offset<5)){
                 offset -= correction_vel;
             }
-            if((volts - voltage_tol) < volts_requested){
+            if((volts - voltage_tol) < volts_requested && (offset>-5 && offset<5)){
                 offset += correction_vel;
             }    
             last_z_in = 0;
@@ -139,8 +140,8 @@ FUNCTION(_) {
             }
             last_z_in = z_pos_in;
         }
-        z_pos_out = z_pos_in + offset;
-        z_fb_out = z_pos_in; // keep axis motor position fb from being confused
+		z_pos_out = round((z_pos_in + offset)*10.0)/10.0;
+		z_fb_out = z_pos_in; // keep axis motor position fb from being confused
     }
     if(!enable){
         z_pos_out = z_pos_in;

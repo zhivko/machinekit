@@ -14,6 +14,7 @@ license "GPL"; // indicates GPL v2 or later
 ;;
 
 #include <unistd.h>
+#include "rtapi_math.h"
 
 float angle;
 
@@ -25,7 +26,8 @@ FUNCTION(_) {
 	angle = angle + timeDelta;
 	
 	out = value + amplitude * sin(angle);
-
+	out = round(out * 10.0)/10.0;
+	
 	return 0;
 }
 

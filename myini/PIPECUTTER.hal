@@ -43,8 +43,10 @@ newpin myini myini.stepgen_maxacc_4	 float out
 
 newpin myini  myini.thc-enable 		 bit out
 newpin myini  myini.actual-volts 	 float in
+newpin myini  myini.thc-z-pos	 	 float in
 newpin myini  myini.volts-requested  float out
 newpin myini  myini.vel-status 		 bit in
+newpin myini  myini.offset-value	 float in
 newpin myini  myini.torch-probe		 bit in
 newpin myini  myini.vel-tol 		 float out
 
