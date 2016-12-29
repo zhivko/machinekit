@@ -21,25 +21,28 @@
 #include <czmq.h>
 #include <google/protobuf/text_format.h>
 
-// #define FAST
-
 // send_pbcontainer: if set, dump container to stderr in TextFormat
 int __attribute__((weak)) print_container;
 
+int
+send_pbcontainer(const std::string &dest, machinetalk::Container &c, void *socket)
+{
+    int retval = 0;
+    zmsg_t *msg = zmsg_new();
+    zframe_t *d =  zframe_new (dest.c_str(), dest.size());
+    zmsg_append(msg, &d);
+    retval = send_pbcontainer(msg, c, socket);
+    zmsg_destroy(&msg);
+    return retval;
+}
+
 // send_pbcontainer: destination can contain multiple routing points
 int
-send_pbcontainer(zmsg_t *dest, pb::Container &c, void *socket)
+send_pbcontainer(zmsg_t *dest, machinetalk::Container &c, void *socket)
 {
     int retval = 0;
     zframe_t *f;
-
-    // handle 'no destination prepended' properly
-    if (dest == NULL)
-	dest = zmsg_new();
-
-#ifndef FAST
     size_t nsize = zmsg_size(dest);
-#endif
 
     f = zframe_new(NULL, c.ByteSize());
     if (f == NULL) {
@@ -61,15 +64,6 @@ send_pbcontainer(zmsg_t *dest, pb::Container &c, void *socket)
 	goto DONE;
     }
 
-#ifdef FAST
-    zmsg_append (dest, &f);
-    retval = zmsg_send(&dest, socket);
-    if (retval) {
-	syslog_async(LOG_ERR,"%s: FATAL - zmsg_send() failed",
-			    __func__);
-    }
-#else
-
     for (size_t i = 0; i < nsize; ++i)
     {
         zframe_t *f = zmsg_pop (dest); 
@@ -85,13 +79,10 @@ send_pbcontainer(zmsg_t *dest, pb::Container &c, void *socket)
         zframe_destroy(&f);
     }
     retval = zframe_send(&f, socket, 0);
-
     if (retval) {
 	syslog_async(LOG_ERR,"%s: FATAL - failed to zframe_sendm(%d)",
 			    __func__, end-buf);
     }
-#endif
-
  DONE:
     c.Clear();
     return retval;
@@ -99,7 +90,7 @@ send_pbcontainer(zmsg_t *dest, pb::Container &c, void *socket)
 
 
 int
-note_printf(pb::Container &c, const char *fmt, ...)
+note_printf(machinetalk::Container &c, const char *fmt, ...)
 {
     va_list ap;
     int n;
