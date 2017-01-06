@@ -25,6 +25,7 @@
 #include "motion_debug.h"
 #include "config.h"
 #include "motion_types.h"
+#include <signal.h>
 
 // Mark strings for translation, but defer translation to userspace
 #define _(s) (s)
@@ -228,6 +229,7 @@ static void update_status(void);
 
 extern int emcmotController(void *arg,  const hal_funct_args_t *fa)
 {
+	raise(SIGINT);
     long period = fa_period(fa);
 
     // - overrun detection -

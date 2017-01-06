@@ -390,6 +390,20 @@ CXXFLAGS := $(INCLUDE) $(CXXFLAGS) \
 	$(PROFILE_CFLAGS) \
 	 -DGIT_BUILD_SHA=\"'$(GIT_BUILD_SHA)'\"
 
+echo  := -g -Wall -funwind-tables
+PROFILE_CFLAGS :=
+PROFILE_LDFLAGS :=
+
+CFLAGS := $(INCLUDE) $(OPT) $(DEBUG) $(PROFILE_CFLAGS) -DULAPI $(call cc-option,-std=gnu99 -fgnu89-inline)
+
+# enable runtime comparison of GIT_CONFIG_SHA (config.h) and GIT_BUILD_SHA
+CFLAGS += -DGIT_BUILD_SHA=\"'$(GIT_BUILD_SHA)'\"
+
+CXXFLAGS := $(INCLUDE) $(CXXFLAGS) \
+	 -DULAPI $(DEBUG) $(OPT) \
+	$(PROFILE_CFLAGS) \
+	 -DGIT_BUILD_SHA=\"'$(GIT_BUILD_SHA)'\"
+
 ifeq ($(RUN_IN_PLACE),yes)
 LDFLAGS += -L$(LIB_DIR) -Wl,-rpath,$(LIB_DIR)
 else
@@ -408,6 +422,7 @@ $(sort $(CUSEROBJS)) : objects/%.o: %.c
 
 # Rules to make .o (object) files, build arch
 $(sort $(CUSEROBJS_BUILD)) : objects/%_build.o: %.c
+	$(ECHO) $(CXXFLAGS)
 	$(ECHO) Compiling $<
 	@mkdir -p $(dir $@)
 	@rm -f $@

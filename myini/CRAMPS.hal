@@ -4,14 +4,12 @@
 #
 # Derived from example hm2-stepper config
 #
-# ########################################
+#########################################
 
 log rt 5
 log user 5
 
 # start haltalk server
-#loadusr -W haltalk -d 1
-#loadusr -W haltalk -d 5
 loadusr -W haltalk -d 5
 
 

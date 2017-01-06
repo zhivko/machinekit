@@ -12,7 +12,7 @@ log user 5
 # start haltalk server
 #loadusr -W haltalk -d 1
 #loadusr -W haltalk -d 5
-loadusr -W haltalk -d 1
+loadusr -W haltalk -d 5
 
 
 # Launch the setup script to make sure hardware setup looks good
