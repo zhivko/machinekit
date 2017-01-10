@@ -4,12 +4,14 @@
 #
 # Derived from example hm2-stepper config
 #
-#########################################
+# ########################################
 
 log rt 5
 log user 5
 
 # start haltalk server
+#loadusr -W haltalk -d 1
+#loadusr -W haltalk -d 5
 loadusr -W haltalk -d 5
 
 
@@ -32,7 +34,7 @@ loadrt [EMCMOT]EMCMOT servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AX
 
 # load low-level drivers
 
-loadrt hal_bb_gpio output_pins=816,822,823,824,825,826,914,923,925,928,931 input_pins=807,808,809,810,817,911,913,930
+loadrt hal_bb_gpio output_pins=816,822,823,824,825,826,914,923,925,928,931 input_pins=807,808,809,810,817,911,913,929,930
 loadrt [PRUCONF](DRIVER) prucode=$(HAL_RTMOD_DIR)/[PRUCONF](PRUBIN) [PRUCONF](CONFIG) halname=hpg
 #loadrt pid count=2
 #loadrt limit1 count=2
@@ -276,9 +278,8 @@ setp hpg.stepgen.04.dirpin         918
 
 # Create estop signal chain
 # Drive software estop to hardware
-#net estop-out iocontrol.0.user-enable-out => bb_gpio.p8.out-26
-#setp bb_gpio.p8.out-26.invert 1
-net estop-loop iocontrol.0.user-enable-out iocontrol.0.emc-enable-in
+net estop-out iocontrol.0.user-enable-out => bb_gpio.p8.out-26
+setp bb_gpio.p8.out-26.invert 1
 
 # Monitor estop input from hardware
 net estop-loop bb_gpio.p8.in-17 => iocontrol.0.emc-enable-in
