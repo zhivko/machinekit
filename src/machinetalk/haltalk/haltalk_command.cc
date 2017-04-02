@@ -33,6 +33,7 @@ static int apply_initial_values(htself_t *self, const machinetalk::Component *pb
 int
 handle_command_input(zloop_t *loop, zmq_pollitem_t *poller, void *arg)
 {
+    fprintf(stderr,"Command INPUT.\n");
     int retval = 0;
 
     htself_t *self = (htself_t *) arg;
