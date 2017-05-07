@@ -50,7 +50,7 @@ thc.current-vel <= motion.current-vel
 
 """;
  
-author "John Thornton";
+author "John Thornton modified by Klemen Živkovič";
 
 license "GPLv2 or greater";
 
@@ -88,12 +88,14 @@ pin in float velocity_tol "The deviation percent from planned velocity";
 pin in float voltage_tol "The deviation of Tip Voltage before correction takes place";
 pin in float correction_vel "The amount of change in user units per period to move Z to correct";
 
+pin in bit simulation "We are simulating and ignoring torch_on && arc_ok && vel_status";
 
 
 // Global Variables
 variable float offset = 0.0;
 variable float last_z_in = 0.0;
 variable float z_pos_out1 = 0.0;
+variable bool prev_simulation = false;
 
 function _;
 
@@ -109,19 +111,24 @@ FUNCTION(_) {
 
     if(enable){
         float min_velocity = requested_vel -(requested_vel*(velocity_tol*0.01));
-        if(current_vel > 0 && current_vel >= min_velocity){vel_status = 1;}
-        else {vel_status =0;}
+        if(current_vel > 0 && current_vel >= min_velocity)
+			{vel_status = 1;}
+        else
+			{vel_status =0;}
         
-        if(torch_on && arc_ok && vel_status){ // allow correction
-            if((volts + voltage_tol) > volts_requested && (offset>-5 && offset<5)){
+        if((torch_on && vel_status) || simulation){ // allow correction // && arc_ok 
+            if((volts + voltage_tol) > volts_requested && offset-correction_vel>-3)
+			{
                 offset -= correction_vel;
             }
-            if((volts - voltage_tol) < volts_requested && (offset>-5 && offset<5)){
+			
+            if((volts - voltage_tol) < volts_requested && offset+correction_vel<3)
+			{
                 offset += correction_vel;
             }    
             last_z_in = 0;
         }
-        if(!torch_on){ // remove any offset
+        if(!torch_on || prev_simulation!=simulation){ // remove any offset
             float z_diff;
             z_diff = z_pos_in - last_z_in;
             if(z_diff > 0 && offset != 0){ // torch is moving up
@@ -147,5 +154,6 @@ FUNCTION(_) {
         z_pos_out = z_pos_in;
         z_fb_out = z_pos_in; // keep axis motor position fb from being confused
     }
+	prev_simulation = simulation;
 }
 

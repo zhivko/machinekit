@@ -26,7 +26,7 @@ setp mythc.vel-scale 0.00037866834
 setp mythc.velocity-tol 3.0
 setp mythc.voltage-tol 2.0
 setp mythc.correction-vel 0.0001
-
+setp mythc.simulation 1
 
 ###################################
 #   encoder thc config
@@ -68,7 +68,8 @@ net thc-vel-in hpg.encoder.00.chan.00.velocity => mythc.encoder-vel
 # bb_gpio.p9.in-30 = MOSI = P503_6 = pin 930
 #net thc-arc-ok mythc.arc-ok <= motion.digital-in-00 <= bb_gpio.p9.in-30
 # arc ok signal
-net thc-arc-ok mythc.arc-ok <= motion.digital-in-00 <= bb_gpio.p9.in-30 
+
+net thc-arc-ok mythc.arc-ok <= bb_gpio.p9.in-30 
 #setp mythc.arc-ok true
 
 
@@ -77,7 +78,8 @@ net thc-scale-offset 	myini.scale-offset		mythc.scale-offset
 net thc-vel-scale    	myini.vel-scale 		mythc.vel-scale
 net thc-voltage-tol  	myini.voltage-tol 		mythc.voltage-tol
 net thc-correction-vel  myini.correction-vel	mythc.correction-vel
-
+net thc-simulation		myini.thc-simulation	mythc.simulation
+net thc-arc-ok			myini.arc-ok			mythc.arc-ok
 
 # position command and feedback
 # hijack position command and feed through thc

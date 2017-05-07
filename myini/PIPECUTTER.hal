@@ -55,6 +55,9 @@ newpin myini  myini.vel-scale 		 float out
 newpin myini  myini.voltage-tol		 float out
 newpin myini  myini.correction-vel 	 float out
 
+newpin myini  myini.thc-simulation   bit out
+newpin myini  myini.arc-ok			 bit in
+
 ready  myini
 
 #net netLaserHeight0	udp.0.distance	mymotion.laserHeight0

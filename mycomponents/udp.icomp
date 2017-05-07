@@ -131,7 +131,7 @@ void *threadFunc(void *arg) {
 		  float f = atof(buf)/10.0f;
 		  recValue = f;
 		  
-		    printf("server received %d/%d bytes: %s distance: %4.2f\n", strlen(buf), n, buf, f);
+		    //printf("server received %d/%d bytes: %s distance: %4.2f\n", strlen(buf), n, buf, f);
   
 		    /*
 		    //gethostbyaddr: determine who sent the datagram
