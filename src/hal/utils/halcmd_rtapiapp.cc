@@ -10,7 +10,7 @@
 #include <avahi-common/malloc.h>
 
 
-#include <machinetalk/protobuf/message.pb.h>
+#include <message.pb.h>
 #include <google/protobuf/text_format.h>
 
 using namespace google::protobuf;
@@ -290,7 +290,7 @@ int rtapi_connect(int instance, char *uri, const char *svc_uuid)
     zsocket_set_identity(z_command, z_ident);
     zsocket_set_linger(z_command, 0);
 
-    if (zsocket_connect(z_command, uri)) {
+    if (zsocket_connect(z_command, "%s", uri)) {
 	perror("connect");
 	return -EINVAL;
     }
