@@ -1,4 +1,4 @@
-# load udp for streaming data from laser sensor
+# load  udp for streaming data from laser sensor
 #newinst udp udp.0 --- ip=192.168.1.114 port=1234 sensDistMm=120.0
 newinst udp udp.1 --- ip=192.168.1.115 port=1234 sensDistMm=120.0
 #addf udp.0 servo-thread

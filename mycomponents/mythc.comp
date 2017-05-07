@@ -50,7 +50,7 @@ thc.current-vel <= motion.current-vel
 
 """;
  
-author "John Thornton modified by Klemen Živkovič";
+author "John Thornton modified by Klemen Živkovič ";
 
 license "GPLv2 or greater";
 

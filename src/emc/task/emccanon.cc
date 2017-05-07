@@ -44,7 +44,7 @@
 #include "emcglb.h"		// TRAJ_MAX_VELOCITY
 #include "modal_state.hh"
 
-//#define EMCCANON_DEBUG
+#define EMCCANON_DEBUG
 
 //Simple compile-time debug macro
 #ifdef EMCCANON_DEBUG
@@ -559,6 +559,8 @@ void SET_G92_OFFSET(double x, double y, double z,
                     double a, double b, double c,
                     double u, double v, double w) {
     /* convert to mm units */
+    canon_debug("Klemen: G92 : x%.3f y%.3f z%.3f",x,y,z);
+	printf("Klemen: G92 : x%.3f y%.3f z%.3f",x,y,z);
     CANON_POSITION pos(x,y,z,a,b,c,u,v,w);
     from_prog(pos);
 
