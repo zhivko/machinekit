@@ -69,7 +69,11 @@ net thc-vel-in hpg.encoder.00.chan.00.velocity => mythc.encoder-vel
 #net thc-arc-ok mythc.arc-ok <= motion.digital-in-00 <= bb_gpio.p9.in-30
 # arc ok signal
 
-net thc-arc-ok mythc.arc-ok <= bb_gpio.p9.in-30 
+# https://forum.linuxcnc.org/30-cnc-machines/29849-hypertherm-powermax-65-arc-ok?start=10#64568
+# in gcode you can wait for digital-in-00 with (http://linuxcnc.org/docs/html/gcode/m-code.html#mcode:m66):
+# M66 P0 L3 Q3 (wait up to 5 seconds for digital input 0 to turn on - L3)
+net start-motion-input mythc.arc-ok <= motion.digital-in-00 <= bb_gpio.p9.in-30
+#net thc-arc-ok mythc.arc-ok <= bb_gpio.p9.in-30
 #setp mythc.arc-ok true
 
 
@@ -79,7 +83,7 @@ net thc-vel-scale    	myini.vel-scale 		mythc.vel-scale
 net thc-voltage-tol  	myini.voltage-tol 		mythc.voltage-tol
 net thc-correction-vel  myini.correction-vel	mythc.correction-vel
 net thc-simulation		myini.thc-simulation	mythc.simulation
-net thc-arc-ok			myini.arc-ok			mythc.arc-ok
+net start-motion-input  myini.arc-ok
 
 # position command and feedback
 # hijack position command and feed through thc
