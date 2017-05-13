@@ -50,7 +50,7 @@ thc.current-vel <= motion.current-vel
 
 """;
  
-author "John Thornton modified by Klemen Živkovič ";
+author "John Thornton modified by klemen.zivkovic@gmail.com ";
 
 license "GPLv2 or greater";
 
@@ -116,7 +116,7 @@ FUNCTION(_) {
         else
 			{vel_status =0;}
         
-        if((torch_on && vel_status) || simulation){ // allow correction // && arc_ok 
+        if((torch_on && arc_ok && vel_status) || simulation){ // allow correction
             if((volts + voltage_tol) > volts_requested && offset-correction_vel>-3)
 			{
                 offset -= correction_vel;
