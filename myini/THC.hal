@@ -101,7 +101,7 @@ net thc-enable myini.thc-enable mythc.enable
 net thc-voltmeter mythc.volts myini.actual-volts
 net thc-voltset myini.volts-requested mythc.volts-requested
 net thc-req-vel mythc.requested-vel <= motion.requested-vel
-net thc-cur-vel mythc.current-vel <= motion.current-vel
+net v mythc.current-vel
 net thc-offset-value mythc.offset-value myini.offset-value
 
 net thc-vel-status mythc.vel-status myini.vel-status
