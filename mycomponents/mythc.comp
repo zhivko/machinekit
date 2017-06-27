@@ -116,7 +116,8 @@ FUNCTION(_) {
         else
 			{vel_status =0;}
         
-        if((torch_on && arc_ok && vel_status) || simulation){ // allow correction
+        //if((torch_on && arc_ok && vel_status) || simulation){ // allow correction
+		if((torch_on && arc_ok) || simulation){ // vel_Status is wrong since requested velocity trips to 0
             if((volts + voltage_tol) > volts_requested && offset-correction_vel>-3)
 			{
                 offset -= correction_vel;
