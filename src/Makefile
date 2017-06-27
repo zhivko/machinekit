@@ -237,6 +237,7 @@ SUBDIRS := \
 	hal/user_comps/vismach \
 	hal/user_comps/vfs11_vfd \
 	hal/user_comps/vfdb_vfd \
+	hal/user_comps/huanyang-vfd \
 	hal/classicladder \
 	hal/utils \
 	hal \
@@ -1585,6 +1586,11 @@ genserkins-objs := emc/kinematics/genserkins.o
 genserkins-objs += libnml/posemath/gomath.o
 genserkins-objs += libnml/posemath/sincos.o $(MATHSTUB)
 
+obj-m += drawbotkins.o
+drawbotkins-objs := emc/kinematics/drawbotkins.o
+drawbotkins-objs += libnml/posemath/gomath.o
+drawbotkins-objs += libnml/posemath/sincos.o $(MATHSTUB)
+
 obj-m += pumakins.o
 pumakins-objs := emc/kinematics/pumakins.o
 pumakins-objs += libnml/posemath/_posemath.o
@@ -1888,6 +1894,7 @@ $(RTLIBDIR)/tripodkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(tripodkins-objs))
 $(RTLIBDIR)/lineardeltakins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(lineardeltakins-objs))
 $(RTLIBDIR)/genhexkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(genhexkins-objs))
 $(RTLIBDIR)/genserkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(genserkins-objs))
+$(RTLIBDIR)/drawbotkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(drawbotkins-objs))
 $(RTLIBDIR)/pumakins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(pumakins-objs))
 $(RTLIBDIR)/scarakins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(scarakins-objs))
 $(RTLIBDIR)/hal_gm$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hal_gm-objs))
