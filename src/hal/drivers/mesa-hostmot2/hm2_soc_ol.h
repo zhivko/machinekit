@@ -47,7 +47,7 @@ typedef struct {
     const char *uio_dev;
     // local copy of calling args
     int argc;
-    const char **argv;
+    char* const *argv;
     void __iomem *base;
     int len;
     char *firmware;
@@ -56,5 +56,6 @@ typedef struct {
     int no_init_llio;
     int num;
     int debug;
+    int already_programmed;
 } hm2_soc_t;
 

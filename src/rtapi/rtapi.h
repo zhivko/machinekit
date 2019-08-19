@@ -498,7 +498,7 @@ typedef struct {
     int pid;                 // if User RT or ULAPI; 0 for kernel
     int level;               // as passed in to rtapi_print_msg()
     char tag[TAGSIZE];       // eg program or module name
-    char buf[0];             // actual message
+    char buf[];              // actual message
 } rtapi_msgheader_t;
 
 #define rtapi2syslog(level) (level+2)
@@ -655,6 +655,30 @@ typedef long int (*rtapi_delay_max_t)(void);
     rtapi_switch->rtapi_delay_max()
 extern long int _rtapi_delay_max(void);
 
+/** Support external clock tracking for linuxcnc-ethercat */
+#define RTAPI_TASK_PLL_SUPPORT
+
+/** 'rtapi_task_pll_get_reference()' gets the reference timestamp
+    for the start of the current cycle.
+    Returns 0 if not called from within task context or on
+    platforms that do not support this.
+*/
+typedef long long (*rtapi_task_pll_get_reference_t)(void);
+#define rtapi_task_pll_get_reference()			\
+    rtapi_switch->rtapi_task_pll_get_reference()
+extern long long _rtapi_task_pll_get_reference(void);
+
+/** 'rtapi_task_pll_set_correction()' sets the correction value for
+    the next scheduling cycle of the current task. This could be
+    used to synchronize the task cycle to external sources.
+    Returns -EINVAL if not called from within task context or on
+    platforms that do not support this.
+*/
+typedef int (*rtapi_task_pll_set_correction_t)(long);
+#define rtapi_task_pll_set_correction(value)			\
+    rtapi_switch->rtapi_task_pll_set_correction(value)
+extern int _rtapi_task_pll_set_correction(long value);
+
 #endif /* RTAPI */
 
 /** rtapi_get_time returns the current time in nanoseconds.  Depending
@@ -771,6 +795,7 @@ typedef struct {
     char *name;
     int cpu_id;
     rtapi_thread_flags_t flags;             // eg Posix, nowait
+    char cgname[LINELEN];
 } rtapi_task_args_t;
 
 
@@ -1080,10 +1105,14 @@ typedef struct {
     rtapi_clock_set_period_t rtapi_clock_set_period;
     rtapi_delay_t rtapi_delay;
     rtapi_delay_max_t rtapi_delay_max;
+    rtapi_task_pll_get_reference_t rtapi_task_pll_get_reference;
+    rtapi_task_pll_set_correction_t rtapi_task_pll_set_correction;
 #else
     rtapi_dummy_t rtapi_clock_set_period;
     rtapi_dummy_t rtapi_delay;
     rtapi_dummy_t rtapi_delay_max;
+    rtapi_dummy_t rtapi_task_pll_get_reference;
+    rtapi_dummy_t rtapi_task_pll_set_correction;
 #endif
     rtapi_get_time_t rtapi_get_time;
     rtapi_get_clocks_t rtapi_get_clocks;
@@ -1140,7 +1169,6 @@ typedef struct {
     rtapi_heap_status_t  rtapi_heap_status;
     rtapi_heap_setflags_t rtapi_heap_setflags;
     rtapi_heap_walk_freelist_t rtapi_heap_walk_freelist;
-
 } rtapi_switch_t;
 
 // using code is responsible to define this:

@@ -480,11 +480,12 @@ KSOURCE_LOCATION_HINTS=$(echo \
 # TARGET_PLATFORM_PC
 # TARGET_PLATFORM_SOCFPGA
 # TARGET_PLATFORM_BEAGLEBONE
+# TARGET_PLATFORM_H3
 # TARGET_PLATFORM_CHIP
 # TARGET_PLATFORM_RASPBERRY
 # TARGET_PLATFORM_ZEDBOARD
 #
-# Platforms. set by --with-platform-{pc,beaglebone,chip,socfpga,raspberry,zedboard}
+# Platforms. set by --with-platform-{pc,beaglebone,h3,chip,socfpga,raspberry,zedboard}
 # see Section 2.3 to enable other platforms, and 2.7 to AC_DEFINE it
 
 # xenomai equivalent of pkg-config
@@ -498,7 +499,7 @@ XENO_CONFIG=
 # Configure several basic features:                                          #
 # - some etc/linuxcnc/machinekit.ini  values                                 #
 # - the MKUUID instance UUID                                                 #
-# - Platform (PC, Raspberry Pi, CHIP, BeagleBone,SocFpga, Zedboard)                        #
+# - Platform (PC, Raspberry Pi, CHIP, BeagleBone, H3 SoC, SocFpga, Zedboard) #
 # - Common shared memory driver                                              #
 # - Parport I/O mode (portable or inb/outb)                                  #
 # - emcweb UI                                                                #
@@ -541,16 +542,22 @@ AC_ARG_WITH(platform-pc,
     ],
     [
         case $host_cpu in
-	    (i?86 | x86_64)
-	        TARGET_PLATFORM_PC=unk
+	    (x86_64)
+	        ARCH_CFLAGS="-m64"
+		TARGET_PLATFORM_PC=unk
 		;;
+	    (i?86)
+	        ARCH_CFLAGS="-m32"
+		TARGET_PLATFORM_PC=unk
+		;;
+
 	    (*)
 	        TARGET_PLATFORM_PC=false
 		platform_pc_reason="$arch_disab_msg"
 		;;
 	esac
     ])
-    
+
 AC_ARG_WITH(platform-socfpga,
     [AS_HELP_STRING(
         [--with-platform-socfpga],
@@ -608,6 +615,35 @@ AC_ARG_WITH(platform-beaglebone,
 	    (*)
 	        TARGET_PLATFORM_BEAGLEBONE=false
 		platform_beaglebone_reason="$arch_disab_msg"
+		;;
+	esac
+    ])
+
+AC_ARG_WITH(platform-h3,
+    [AS_HELP_STRING(
+        [--with-platform-h3],
+	[Build for H3 SoC platform (default for ARM arch)])],
+    [
+        case $with_platform_h3 in
+	    (y*)
+	    	TARGET_PLATFORM_H3=true
+		platform_specified=true
+		platform_h3_reason="$cmdl_enab_msg"
+		;;
+	    (*)
+	    	TARGET_PLATFORM_H3=false
+		platform_h3_reason="$cmdl_disab_msg"
+		;;
+	esac
+    ],
+    [
+        case $host_cpu in
+	    (arm*)
+	        TARGET_PLATFORM_H3=unk
+		;;
+	    (*)
+	    	TARGET_PLATFORM_H3=false
+		platform_h3_reason="$arch_disab_msg"
 		;;
 	esac
     ])
@@ -699,6 +735,8 @@ AC_ARG_WITH(platform-zedboard,
 	esac
     ])
 
+AC_SUBST(ARCH_CFLAGS)
+
 if $platform_specified; then
     # Platform was explicitly specified using --with-platform-*;
     # disable anything not explicitly specified
@@ -713,6 +751,10 @@ if $platform_specified; then
     if test $TARGET_PLATFORM_BEAGLEBONE = unk; then
 	TARGET_PLATFORM_BEAGLEBONE=false
 	platform_beaglebone_reason="$cmdl_notspec_msg"
+    fi
+    if test $TARGET_PLATFORM_H3 = unk; then
+	TARGET_PLATFORM_H3=false
+	platform_h3_reason="$cmdl_notspec_msg"
     fi
     if test $TARGET_PLATFORM_CHIP = unk; then
 	TARGET_PLATFORM_CHIP=false
@@ -742,6 +784,10 @@ else
         TARGET_PLATFORM_BEAGLEBONE=true
 	platform_beaglebone_reason="$arch_enab_msg"
     fi
+    if test $TARGET_PLATFORM_H3 = unk; then
+        TARGET_PLATFORM_H3=true
+	platform_h3_reason="$arch_enab_msg"
+    fi
     if test $TARGET_PLATFORM_CHIP = unk; then
         TARGET_PLATFORM_CHIP=true
 	platform_chip_reason="$arch_enab_msg"
@@ -756,12 +802,21 @@ else
     fi
 fi
 
+if test $TARGET_PLATFORM_PC = true; then
+	echo "*** TARGET_PLATFORM_PC=true ***"
+	touch ../debian/platform_pc
+fi
+
+
 # Print messages about what platforms are to be enabled or disabled
 AC_MSG_CHECKING(platform-pc)
 AC_MSG_RESULT([$platform_pc_reason])
 
 AC_MSG_CHECKING(platform-beaglebone)
 AC_MSG_RESULT([$platform_beaglebone_reason])
+
+AC_MSG_CHECKING(platform-h3)
+AC_MSG_RESULT([$platform_h3_reason])
 
 AC_MSG_CHECKING(platform-chip)
 AC_MSG_RESULT([$platform_chip_reason])
@@ -925,7 +980,7 @@ AC_ARG_ENABLE(dev,
 # NML
 ##############################################################################
 
-PKG_CHECK_MODULES([CZMQ], [libczmq > 2.0],
+PKG_CHECK_MODULES([CZMQ], [libczmq > 4.0],
     [
         AC_DEFINE(HAVE_CZMQ, [], [zeroMQ czmq library available])
 	USE_CZMQ=yes
@@ -933,7 +988,7 @@ PKG_CHECK_MODULES([CZMQ], [libczmq > 2.0],
 
 PKG_CHECK_MODULES([PROTOBUF], [protobuf > 2.4.0],
     [
-        AC_DEFINE(HAVE_PROTOBUF, [], [zeroMQ czmq library available])
+        AC_DEFINE(HAVE_PROTOBUF, [], [protobuf available])
 	USE_PROTOBUF=yes
     ],)
 
@@ -969,9 +1024,10 @@ PKG_CHECK_MODULES([LWS], libwebsockets,
    ],)
 
 AC_MSG_CHECKING(whether to build webtalk)
-AC_ARG_ENABLE(webtalk,
-    [  --enable-webtalk    build Webtalk],
-    [
+AC_ARG_ENABLE([webtalk],
+    AS_HELP_STRING([--enable-webtalk="ARG"], [build Webtalk [ARG=yes] ]))
+
+    AS_IF([test "x$enable_webtalk" = "xyes"], [
 	if test "$USE_LWS" != "yes"; then
 	    AC_MSG_ERROR([Please install libwebsockets before building Webtalk.])
 	fi
@@ -1003,6 +1059,12 @@ PKG_CHECK_MODULES([AVAHI], [avahi-client > 0.6],
         AC_DEFINE(HAVE_AVAHI, [], [avahi mDNS client library available])
 	USE_AVAHI=yes
     ],)
+
+PKG_CHECK_MODULES([LIBCGROUP], libcgroup,
+   [
+        AC_DEFINE(HAVE_LIBCGROUP, [], [libcgroup library available])
+	USE_LIBCGROUP=yes
+   ],)
 
 AC_MSG_CHECKING(whether to enable NML-using parts)
 AC_ARG_ENABLE(nml,
@@ -1396,8 +1458,8 @@ test "$with_posix" = check && with_posix=yes
 test "$have_librt" = no && with_posix=no
 AC_MSG_RESULT($with_posix)
 if test "$with_posix" = yes; then
-   POSIX_THREADS_LDFLAGS="-lpthread -lrt"
-   POSIX_THREADS_RTFLAGS="$POSIX_THREADS_RTFLAGS -pthread"
+   POSIX_THREADS_LDFLAGS="-lpthread -lrt $LIBCGROUP_LIBS"
+   POSIX_THREADS_RTFLAGS="$POSIX_THREADS_RTFLAGS -pthread $LIBCGROUP_CFLAGS"
    BUILD_THREAD_FLAVORS="$BUILD_THREAD_FLAVORS posix"
 fi
 
@@ -1406,8 +1468,9 @@ test "$with_rt_preempt" = check && with_rt_preempt=yes
 test "$have_librt" = no && with_rt_preempt=no
 AC_MSG_RESULT($with_rt_preempt)
 if test "$with_rt_preempt" = yes; then
-    RT_PREEMPT_THREADS_LDFLAGS="-lpthread -lrt"
+    RT_PREEMPT_THREADS_LDFLAGS="-lpthread -lrt $LIBCGROUP_LIBS"
     RT_PREEMPT_THREADS_RTFLAGS="$RT_PREEMPT_THREADS_RTFLAGS -pthread"
+    RT_PREEMPT_THREADS_RTFLAGS="$RT_PREEMPT_THREADS_RTFLAGS $LIBCGROUP_CFLAGS"
     BUILD_THREAD_FLAVORS="$BUILD_THREAD_FLAVORS rt-preempt"
     with_userland_rt_threads=yes
 fi
@@ -1791,6 +1854,9 @@ AC_SUBST([SSL_LIBS])
 AC_SUBST([UUID_CFLAGS])
 AC_SUBST([UUID_LIBS])
 
+AC_SUBST([LIBCGROUP_CFLAGS])
+AC_SUBST([LIBCGROUP_LIBS])
+
 AC_SUBST([USE_CZMQ])
 AC_SUBST([USE_PROTOBUF])
 AC_SUBST([USE_JANSSON])
@@ -1799,6 +1865,7 @@ AC_SUBST([USE_URIPARSER])
 AC_SUBST([USE_AVAHI])
 AC_SUBST([USE_SSL])
 AC_SUBST([USE_UUID])
+AC_SUBST([USE_LIBCGROUP])
 
 if test "$with_usermode_pci" = yes; then
    AC_DEFINE([USERMODE_PCI], [], [build PCI drivers with usermode PCI support])
@@ -1831,6 +1898,12 @@ if $TARGET_PLATFORM_BEAGLEBONE; then
    target_platform_beaglebone_val=yes
 fi
 AC_SUBST(TARGET_PLATFORM_BEAGLEBONE,$target_platform_beaglebone_val)
+
+if $TARGET_PLATFORM_H3; then
+   AC_DEFINE(TARGET_PLATFORM_H3, [], [build for H3 SoC platform])
+   target_platform_h3_val=yes
+fi
+AC_SUBST(TARGET_PLATFORM_H3,$target_platform_h3_val)
 
 if $TARGET_PLATFORM_CHIP; then
    AC_DEFINE(TARGET_PLATFORM_CHIP, [], [build for Chip platform])
@@ -2318,26 +2391,26 @@ then
     AC_MSG_ERROR([awk not found])
 fi
 
-if test -n "${rtai_kernels}${xenomai_kernels}${shmdrv_kernels}"; then
+#if test -n "${rtai_kernels}${xenomai_kernels}${shmdrv_kernels}"; then
     # Kernel module tools only needed for kthreads
-    AC_PATH_PROG(INSMOD, insmod, "none", $SPATH)
-    if test $INSMOD = "none"
-    then
-	AC_MSG_ERROR([insmod not found])
-    fi
+#    AC_PATH_PROG(INSMOD, insmod, "none", $SPATH)
+#    if test $INSMOD = "none"
+#    then
+#	AC_MSG_ERROR([insmod not found])
+#    fi
 
-    AC_PATH_PROG(RMMOD, rmmod, "none", $SPATH)
-    if test $RMMOD = "none"
-    then
-	AC_MSG_ERROR([rmmod not found])
-    fi
+#    AC_PATH_PROG(RMMOD, rmmod, "none", $SPATH)
+#    if test $RMMOD = "none"
+#    then
+#	AC_MSG_ERROR([rmmod not found])
+#    fi
 
-    AC_PATH_PROG(LSMOD, lsmod, "none", $SPATH)
-    if test $LSMOD = "none"
-    then
-	AC_MSG_ERROR([lsmod not found])
-    fi
-fi
+#    AC_PATH_PROG(LSMOD, lsmod, "none", $SPATH)
+#    if test $LSMOD = "none"
+#    then
+#	AC_MSG_ERROR([lsmod not found])
+#    fi
+#fi
 
 AC_PATH_PROG(PIDOF, pidof, "none", $SPATH)
 if test $PIDOF = "none"
@@ -2408,7 +2481,7 @@ AC_ARG_WITH(python,
     [
         PYTHON=$withval
     ],[
-        PYTHON=python
+        PYTHON=python2
     ])
 AC_PATH_PROG(PYTHON,$PYTHON,"none")
 if test $PYTHON = "none"
@@ -2825,7 +2898,7 @@ fi
 if test "x$HAVE_XAW" = "xno"; then
     AC_MSG_WARN([Xaw lib missing, you won't be able to build/run xemc. try installing it with 'apt-get install libxaw7-dev'])
 else
-    XAW_LIBS="$X_PRE_LIBS $X_LIBS -lX11 -lXaw -lXt"
+    XAW_LIBS="-lX11 -lXaw -lXt"
 fi
 AC_SUBST([HAVE_XAW])
 AC_SUBST([XAW_LIBS])
@@ -3037,7 +3110,6 @@ AC_SUBST([SITEPY])
 
 if test "$BUILD_EMCWEB" = yes; then
    # these are needed for the emcweb interface only
-   AX_BOOST_SERIALIZATION()
    AX_BOOST_THREAD()
    AX_BOOST_SYSTEM()
 fi
@@ -3067,19 +3139,29 @@ AC_CONFIG_FILES(machinekitcfg.py-tmp)
 AC_CONFIG_FILES(../scripts/machinekit.ini.tmpl)
 AC_OUTPUT
 
-# if there is no machinekit.ini file, use
-# the autogenerated one; else dont touch it as the user might have
-# adapted it already
-AC_MSG_CHECKING(if $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini exists )
+# if there is no machinekit.ini file, use the autogenerated one; 
+# else just ensure the MKUUID is unique but dont touch other options
+# as the user might have adapted it already
 
-if test -e "$BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini"; then
-   AC_MSG_RESULT(not touching existing	$BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini file)
+
+if test "$RUN_IN_PLACE" = "yes"; then
+    AC_MSG_CHECKING(if $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini exists with valid MKUUID )
+    if test -e "$BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini"; then
+	../scripts/fix-uuid $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini $MKUUID ;
+	AC_MSG_RESULT($BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini file exists, ensured MKUUID was unique)
+    else
+	AC_MSG_RESULT($BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini does not exist - creating one)
+	mkdir -p  $BUILD_TOPLEVEL/etc/linuxcnc
+	cp ../scripts/machinekit.ini.tmpl $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini
+	../scripts/fix-uuid $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini $MKUUID ;
+	AC_MSG_RESULT(please review and edit options in $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini as needed!)
+    fi
 else
-   AC_MSG_RESULT($BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini does not exist - using default version)
-   mkdir -p  $BUILD_TOPLEVEL/etc/linuxcnc
-   cp ../scripts/machinekit.ini.tmpl $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini
-   AC_MSG_RESULT(please review and edit $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini as needed!)
+    ## if packaging we don't want to give MKUUID a unique uuid yet - else all packages will have same one
+    mkdir -p  $BUILD_TOPLEVEL/etc/linuxcnc
+    cp ../scripts/machinekit.ini.tmpl $BUILD_TOPLEVEL/etc/linuxcnc/machinekit.ini
 fi
+
 
 # clean up machinekitcfg.py:
 # subsitute "yes" by True
@@ -3105,7 +3187,7 @@ done
 cat machinekitcfg.py-tmp2 > $BUILD_TOPLEVEL/lib/python/machinekit/config.py
 rm machinekitcfg.py-tmp2
 AC_MSG_CHECKING(usability of $BUILD_TOPLEVEL/lib/python/machinekit/config.py)
-python $BUILD_TOPLEVEL/lib/python/machinekit/config.py
+python2 $BUILD_TOPLEVEL/lib/python/machinekit/config.py
 AC_MSG_RESULT(done)
 
 ##############################################################################

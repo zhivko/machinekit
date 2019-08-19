@@ -165,21 +165,25 @@ int _rtapi_task_new(const rtapi_task_args_t *args) {
 	return -EINVAL;
     }
 
+    /* Allow RT threads to use nowait. Required for external timing.
     if ((args->flags & (TF_NOWAIT|TF_NONRT)) == TF_NOWAIT) {
 	rtapi_print_msg(RTAPI_MSG_ERR,"task '%s' : nowait flag invalid for RT thread\n",
 			args->name);
 	rtapi_mutex_give(&(rtapi_data->mutex));
 	return -EINVAL;
     }
+    */
 
     // task slot found; reserve it and release lock
-    rtapi_print_msg(RTAPI_MSG_DBG,
-		    "Creating new task %d  '%s:%d': "
-		    "req prio %d (highest=%d lowest=%d) stack=%lu fp=%d flags=%d\n",
-		    task_id, args->name, rtapi_instance, args->prio,
-		    _rtapi_prio_highest(),
-		    _rtapi_prio_lowest(),
-		    args->stacksize, args->uses_fp, args->flags);
+    rtapi_print_msg(
+        RTAPI_MSG_DBG,
+        "Creating new task %d  '%s:%d': "
+        "req prio %d (highest=%d lowest=%d) stack=%lu fp=%d flags=%d "
+        "cgname=%s\n",
+        task_id, args->name, rtapi_instance, args->prio,
+        _rtapi_prio_highest(),
+        _rtapi_prio_lowest(),
+        args->stacksize, args->uses_fp, args->flags, args->cgname);
     task->magic = TASK_MAGIC;
 
     /* fill out task structure */
@@ -191,6 +195,7 @@ int _rtapi_task_new(const rtapi_task_args_t *args) {
     task->flags = args->flags;
     task->uses_fp = args->uses_fp;
     task->cpu = args->cpu_id > -1 ? args->cpu_id : rtapi_data->rt_cpu;
+    strncpy(task->cgname, args->cgname, LINELEN);
 
     rtapi_print_msg(RTAPI_MSG_DBG, "Task CPU:  %d\n", task->cpu);
 
@@ -344,6 +349,10 @@ int _rtapi_task_start(int task_id, unsigned long int period_nsec) {
     task->period = period_nsec;
     task->ratio = period_nsec / period;
 
+    // limit PLL correction values to +/-1% of cycle time
+    task->pll_correction_limit = period_nsec / 100;
+    task->pll_correction = 0;
+
     rtapi_print_msg(RTAPI_MSG_DBG,
 		    "rtapi_task_start:  starting task %d '%s'\n",
 		    task_id, task->name);
@@ -351,6 +360,7 @@ int _rtapi_task_start(int task_id, unsigned long int period_nsec) {
 
     return _rtapi_task_start_hook(task,task_id,0);
 }
+
 #else  /* kernel RTAPI */
 int _rtapi_task_start(int task_id, unsigned long int period_nsec) {
     int retval;
@@ -517,6 +527,31 @@ int _rtapi_task_self(void) {
     return -EINVAL;
 #endif
 }
+
+#ifdef HAVE_RTAPI_TASK_PLL_GET_REFERENCE_HOOK
+long long _rtapi_task_pll_get_reference_hook(void);
+#endif
+
+long long _rtapi_task_pll_get_reference(void) {
+#ifdef HAVE_RTAPI_TASK_PLL_GET_REFERENCE_HOOK
+    return _rtapi_task_pll_get_reference_hook();
+#else
+    return 0;
+#endif
+}
+
+#ifdef HAVE_RTAPI_TASK_PLL_SET_CORRECTION_HOOK
+int _rtapi_task_pll_set_correction_hook(long);
+#endif
+
+int _rtapi_task_pll_set_correction(long value) {
+#ifdef HAVE_RTAPI_TASK_PLL_SET_CORRECTION_HOOK
+    return _rtapi_task_pll_set_correction_hook(value);
+#else
+    return 0;
+#endif
+}
+
 
 #endif  /* RTAPI */
 

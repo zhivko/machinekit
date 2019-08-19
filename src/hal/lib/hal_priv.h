@@ -380,7 +380,7 @@ static inline hal_data_u *sig_value(hal_sig_t *sig) {
     return &sig->value;
 }
 
-static inline const hal_data_u *param_value(const hal_param_t *param)
+static inline hal_data_u *param_value(const hal_param_t *param)
 {
     return (hal_data_u *)SHMPTR(param->data_ptr);
 }
@@ -539,7 +539,7 @@ typedef struct hal_funct_args {
 
     // argument vector for FS_USERLAND; 0/NULL for others
     int argc;
-    const char **argv;
+    char * const *argv;
 } hal_funct_args_t ;
 
 // signatures
@@ -599,6 +599,7 @@ typedef struct {
     int uses_fp;
     int cpu_id;
     rtapi_thread_flags_t flags;
+    char cgname[LINELEN];
 } hal_threadargs_t;
 
 // extended arguments version of hal_create_thread().
@@ -621,6 +622,7 @@ typedef struct hal_thread {
                                 // root: hal_data.threads
     int cpu_id;                 /* cpu to bind on, or -1 */
     rtapi_thread_flags_t flags;             // eg Posix, nowait
+    char cgname[LINELEN];       // libcgroup name
 } hal_thread_t;
 
 
@@ -659,7 +661,8 @@ static inline const char* fa_funct_name(const hal_funct_args_t *fa)
 }
 
 static inline const int fa_argc(const hal_funct_args_t *fa) { return fa->argc; }
-static inline const char** fa_argv(const hal_funct_args_t *fa) { return fa->argv; }
+static inline char* const * fa_argv(
+    const hal_funct_args_t *fa) { return fa->argv; }
 static inline const void * fa_arg(const hal_funct_args_t *fa) { return fa->funct->arg; }
 
 
@@ -855,7 +858,8 @@ void report_memory_usage(void);
 
 char *halg_strdup(const int use_hal_mutex, const char *paramptr);
 int halg_free_str(char **s);  // will set *s to NULL
-char **halg_dupargv(const bool use_hal_mutex, const int argc, const char **argv);
+char **halg_dupargv(const bool use_hal_mutex, const int argc,
+                    char * const *argv);
 int halg_free_argv(const bool use_hal_mutex, char **argv);
 int halg_free_single_str(char *s);
 

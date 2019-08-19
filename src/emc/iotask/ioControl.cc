@@ -42,6 +42,21 @@
 *  
 *   Derived from a work by Fred Proctor & Will Shackleford
 *
+*****************************************************************************
+*  Amended by ArcEye for initialising ATCs 2011-2019
+*
+*  When ATC homed or otherwise when machine homed and toolchanger knows the 
+*  current tool number, system and GUI can be updated by setting:
+*  iocontrol.numtools to number of tools on ATC (default is 6)
+*  iocontrol.currenttool to current tool number
+*  iocontrol.update to 1 will start the sequence
+*
+*  iocontrol will issue a toolchange for that tool number, which will not
+*  result in movement because it is already there, but will update system
+*  and GUI as to current tool
+*
+******************************************************************************
+*
 * Author:
 * License: GPL Version 2
 * System: Linux
@@ -80,7 +95,6 @@ static char *ttcomments[CANON_POCKETS_MAX];
 static int fms[CANON_POCKETS_MAX];
 static int random_toolchanger = 0;
 
-
 struct iocontrol_str {
     hal_bit_t *user_enable_out;	/* output, TRUE when EMC wants stop */
     hal_bit_t *emc_enable_in;	/* input, TRUE on any external stop */
@@ -89,12 +103,18 @@ struct iocontrol_str {
     hal_bit_t *coolant_flood;	/* coolant flood output pin */
     hal_bit_t *lube;		/* lube output pin */
     hal_bit_t *lube_level;	/* lube level input pin */
-
-
+    // NEW pins to generate auto update of tool number at startup when using
+    // ArcEye's Triac toolchanger component
+    hal_s32_t *numtools; 	/* the number of tools on the ATC */
+    hal_s32_t *currenttool; 	/* input to set current tool at start up */
+    hal_bit_t *update;	   	/* flag to update tool number to currenttool */
+    hal_bit_t *initialised;	/* flag to show if tool updated */
     // the following pins are needed for toolchanging
     //tool-prepare
     hal_bit_t *tool_prepare;	/* output, pin that notifies HAL it needs to prepare a tool */
-    hal_s32_t *tool_prep_pocket;/* output, pin that holds the tool number to be prepared, only valid when tool-prepare=TRUE */
+    hal_s32_t *tool_prep_pocket;/* output, pin that holds the P word from the tool table entry matching the tool to be prepared,
+                                   only valid when tool-prepare=TRUE */
+    hal_s32_t *tool_prep_index; /* internal array index of prepped tool above */
     hal_s32_t *tool_prep_number;/* output, pin that holds the tool number to be prepared, only valid when tool-prepare=TRUE */
     hal_s32_t *tool_number;     /* output, pin that holds the tool number currently in the spindle */
     hal_bit_t *tool_prepared;	/* input, pin that notifies that the tool has been prepared */
@@ -257,6 +277,7 @@ static int iniLoad(const char *filename)
 *
 * Return Value: Zero on success or -1 if file not found.
 *
+    
 * Side Effects: Default setting used if the parameter not found in
 *		the ini file.
 *
@@ -445,6 +466,18 @@ int iocontrol_hal_init(void)
 	hal_exit(comp_id);
 	return -1;
     }
+
+    // tool-prep-index
+    retval = hal_pin_s32_newf(HAL_OUT, &(iocontrol_data->tool_prep_index), comp_id,
+			      "iocontrol.%d.tool-prep-index", n);
+    if (retval < 0) {
+	rtapi_print_msg(RTAPI_MSG_ERR,
+			"IOCONTROL: ERROR: iocontrol %d param tool-prep-index export failed with err=%i\n",
+			n, retval);
+	hal_exit(comp_id);
+	return -1;
+    }
+
     // tool-prep-pocket
     retval = hal_pin_s32_newf(HAL_OUT, &(iocontrol_data->tool_prep_pocket), comp_id, 
 			      "iocontrol.%d.tool-prep-pocket", n);
@@ -455,6 +488,56 @@ int iocontrol_hal_init(void)
 	hal_exit(comp_id);
 	return -1;
     }
+
+////////// NEW SECTION 
+
+    // update
+    retval = hal_pin_bit_newf(HAL_IN, &(iocontrol_data->update), comp_id, 
+			     "iocontrol.%d.update", n);
+    if (retval < 0) 
+        {
+    	rtapi_print_msg(RTAPI_MSG_ERR,
+		"IOCONTROL: ERROR: iocontrol %d pin update export failed with err=%i\n",n, retval);
+    	hal_exit(comp_id);
+	return -1;
+        }
+
+    // initialised
+    retval = hal_pin_bit_newf(HAL_IN, &(iocontrol_data->initialised), comp_id, 
+			     "iocontrol.%d.initialised", n);
+    if (retval < 0) 
+        {
+    	rtapi_print_msg(RTAPI_MSG_ERR,
+		"IOCONTROL: ERROR: iocontrol %d pin initialised export failed with err=%i\n",n, retval);
+    	hal_exit(comp_id);
+	return -1;
+        }
+
+    // currenttool
+    retval = hal_pin_s32_newf(HAL_IN, &(iocontrol_data->currenttool), comp_id, 
+			      "iocontrol.%d.currenttool", n);
+    if (retval < 0) 
+        {
+    	rtapi_print_msg(RTAPI_MSG_ERR,
+			"IOCONTROL: ERROR: iocontrol %d pin currenttool export failed with err=%i\n", n, retval);
+    	hal_exit(comp_id);
+	return -1;
+        }
+
+    // number of tools
+    retval = hal_pin_s32_newf(HAL_IN, &(iocontrol_data->numtools), comp_id, "iocontrol.%d.numtools", n);
+    if (retval < 0)
+        {
+	rtapi_print_msg(RTAPI_MSG_ERR,
+		    "IOCONTROL: ERROR: iocontrol %d pin numtools export failed with err=%i\n", n, retval);
+	hal_exit(comp_id);
+	return -1;
+        }
+    
+////////////////////////////    
+
+
+
     // tool-prepared
     retval = hal_pin_bit_newf(HAL_IN, &(iocontrol_data->tool_prepared), comp_id, 
 			      "iocontrol.%d.tool-prepared", n);
@@ -521,6 +604,21 @@ int iocontrol_hal_init(void)
 *
 * Called By: main
 ********************************************************************/
+
+///////////NEW
+
+void hal_init_pins_once(void)  // don't want these pins reset once initialised'
+{
+   *(iocontrol_data->initialised) = 0;
+   *(iocontrol_data->currenttool) = 0;
+   *(iocontrol_data->update) = 0;
+   *(iocontrol_data->numtools) = 6;
+
+}
+
+/////////////////////////
+
+
 void hal_init_pins(void)
 {
     *(iocontrol_data->user_enable_out)=0;	/* output, FALSE when EMC wants stop */
@@ -530,7 +628,8 @@ void hal_init_pins(void)
     *(iocontrol_data->lube)=0;			/* lube output pin */
     *(iocontrol_data->tool_prepare)=0;		/* output, pin that notifies HAL it needs to prepare a tool */
     *(iocontrol_data->tool_prep_number)=0;	/* output, pin that holds the tool number to be prepared, only valid when tool-prepare=TRUE */
-    *(iocontrol_data->tool_prep_pocket)=0;	/* output, pin that holds the tool number to be prepared, only valid when tool-prepare=TRUE */
+    *(iocontrol_data->tool_prep_pocket)=0;	/* output, pin that holds the P word from the tool to be prepared, only valid when tool-prepare=TRUE */
+    *(iocontrol_data->tool_prep_index)=0;	/* output, param that holds the internal index of the tool to be prepared, for debug */
     *(iocontrol_data->tool_change)=0;		/* output, notifies a tool-change should happen (emc should be in the tool-change position) */
 }
 
@@ -570,6 +669,13 @@ int read_hal_inputs(void)
     if (oldval != emcioStatus.lube.level) {
 	retval = 1;
     }
+      // NEW CODE
+      // this triggers a status update, which is the easiest way to force an tool update
+      // without injecting messages directly into the system
+      
+   if( ((*(iocontrol_data->currenttool)) != (*(iocontrol_data->tool_number))) && *(iocontrol_data->update) == 1) 
+        retval = 1;
+  
     return retval;
 }
 
@@ -632,7 +738,7 @@ void reload_tool_number(int toolno) {
 int read_tool_inputs(void)
 {
     if (*iocontrol_data->tool_prepare && *iocontrol_data->tool_prepared) {
-	emcioStatus.tool.pocketPrepped = *(iocontrol_data->tool_prep_pocket); //check if tool has been prepared
+	emcioStatus.tool.pocketPrepped = *(iocontrol_data->tool_prep_index); //check if tool has been prepared
 	*(iocontrol_data->tool_prepare) = 0;
 	emcioStatus.status = RCS_DONE;  // we finally finished to do tool-changing, signal task with RCS_DONE
 	return 10; //prepped finished
@@ -650,6 +756,7 @@ int read_tool_inputs(void)
 	emcioStatus.tool.pocketPrepped = -1; //reset the tool preped number, -1 to permit tool 0 to be loaded
 	*(iocontrol_data->tool_prep_number) = 0; //likewise in HAL
 	*(iocontrol_data->tool_prep_pocket) = 0; //likewise in HAL
+	*(iocontrol_data->tool_prep_index) = 0; //likewise in HAL
 	*(iocontrol_data->tool_change) = 0; //also reset the tool change signal
 	emcioStatus.status = RCS_DONE;	// we finally finished to do tool-changing, signal task with RCS_DONE
 	return 11; //change finished
@@ -763,6 +870,13 @@ int main(int argc, char *argv[])
     emcioStatus.lube.on = 0;
     emcioStatus.lube.level = 1;
 
+    //////////////////////NEW
+    
+    hal_init_pins_once(); // Initialise then don't touch again in estop or whatever
+
+    //////////////////////////
+
+
     while (!done) {
 	// check for inputs from HAL (updates emcioStatus)
 	// returns 1 if any of the HAL pins changed from the last time we checked
@@ -805,6 +919,32 @@ int main(int argc, char *argv[])
 	type = emcioCommand->type;
 	emcioStatus.status = RCS_DONE;
 
+///NEW   ArcEye 20122011 ////////////////////////////////////
+//
+//  Want to update Axis with the current toolnumber from the ATC
+// Axis does not remember the current tool number, so once only detect from greyscale disc and number
+// becomes available to modified io module.
+// io triggers a toolchange state, instructing to change to the tool detected
+// Because that tool is already current, this component does nothing and passes back a 'toolchanged' signal
+// When io receives this it sets the appropriate NML code and axis updates the tool loaded display	
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	if(*(iocontrol_data->initialised) == 0) // only do this once
+    	    {
+	    if((*(iocontrol_data->currenttool) > 0) && (*(iocontrol_data->currenttool) < *(iocontrol_data->numtools))) 
+		{ // if it contains a valid number
+		*(iocontrol_data->tool_prepare) = 1;
+		*(iocontrol_data->tool_prep_pocket) = *(iocontrol_data->currenttool);
+		*(iocontrol_data->tool_prep_number) = *(iocontrol_data->currenttool);
+		*(iocontrol_data->tool_number) = *(iocontrol_data->currenttool);
+		*(iocontrol_data->tool_change) = 1;
+		*(iocontrol_data->initialised) = 1; 
+		emcioStatus.tool.toolInSpindle = *(iocontrol_data->currenttool);
+		reload_tool_number(emcioStatus.tool.toolInSpindle);
+		}
+    	    }
+///////////////////////////////////////////////	    
+	
 	switch (type) {
 	case 0:
 	    break;
@@ -847,7 +987,8 @@ int main(int argc, char *argv[])
                 if(random_toolchanger && p == 0) break;
 
                 /* set tool number first */
-                *(iocontrol_data->tool_prep_pocket) = p;
+                *(iocontrol_data->tool_prep_index) = p;
+                *(iocontrol_data->tool_prep_pocket) = random_toolchanger? p: fms[p];
                 if(!random_toolchanger && p == 0) {
                     *(iocontrol_data->tool_prep_number) = 0;
                 } else {

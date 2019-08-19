@@ -1,4 +1,4 @@
-Travis: image:https://travis-ci.org/machinekit/machinekit.svg?branch=master["Travis Build Status", link="https://travis-ci.org/machinekit/machinekit"]
+Machinekit: image:https://jenkins.machinekit.io/buildStatus/icon?job=machinekit-builder[]
 
 Manpages: image:https://jenkins.machinekit.io/buildStatus/icon?job=machinekit-manpages[]
 
@@ -30,14 +30,13 @@ ubiquitous platforms like phones or tablets.
 
 == Getting Machinekit
 
-The easiest way to get up-and-running is to install Debian Wheezy and get the binary packages. 
+The easiest way to get up-and-running is to install Debian Stretch and get the binary packages. 
 
 Please go to link:http://www.machinekit.io/[www.machinekit.io] for this and all other information, 
 including documentation.
 
 
-History
--------
+== History
 
 The open-source Machinekit project forked from the open-source LinuxCNC project
 (http://www.linuxcnc.org) in 2014. At the present time, identifiers such as

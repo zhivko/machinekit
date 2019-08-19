@@ -150,6 +150,8 @@ typedef struct {
     size_t stacksize;
     int period;
     int ratio;
+    long pll_correction;
+    long pll_correction_limit;
     task_state_t state;		/* task state */
     int prio;			/* priority */
     int owner;			/* owning module */
@@ -157,6 +159,7 @@ typedef struct {
     void *arg;			/* task argument */
     int cpu;
     rtapi_thread_flags_t flags;
+    char cgname[LINELEN];
 } task_data;
 
 typedef struct {

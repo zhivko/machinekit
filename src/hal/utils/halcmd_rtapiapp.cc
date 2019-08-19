@@ -17,8 +17,7 @@ using namespace google::protobuf;
 
 static machinetalk::Container command, reply;
 
-static zctx_t *z_context;
-static void *z_command;
+static zsock_t *z_command = NULL;
 static int timeout = 5000;
 static std::string errormsg;
 int proto_debug;
@@ -189,7 +188,9 @@ int rtapi_ping(int instance)
     return reply.retcode();
 }
 
-int rtapi_newthread(int instance, const char *name, int period, int cpu, int use_fp, int flags)
+int rtapi_newthread(
+    int instance, const char *name, int period, int cpu,
+    char *cgname, int use_fp, int flags)
 {
     machinetalk::RTAPICommand *cmd;
     command.Clear();
@@ -201,6 +202,7 @@ int rtapi_newthread(int instance, const char *name, int period, int cpu, int use
     cmd->set_cpu(cpu);
     cmd->set_use_fp(use_fp);
     cmd->set_flags(flags);
+    cmd->set_cgname(cgname);
 
     int retval = rtapi_rpc(z_command, command, reply);
     if (retval)
@@ -279,22 +281,28 @@ int rtapi_connect(int instance, char *uri, const char *svc_uuid)
     }
 #endif
 
-    z_context = zctx_new ();
-    assert(z_context);
-    z_command = zsocket_new (z_context, ZMQ_DEALER);
+    z_command = zsock_new (ZMQ_DEALER);
     assert(z_command);
 
     char z_ident[30];
     snprintf(z_ident, sizeof(z_ident), "halcmd%d",getpid());
 
-    zsocket_set_identity(z_command, z_ident);
-    zsocket_set_linger(z_command, 0);
+    zsock_set_identity(z_command, z_ident);
+    zsock_set_linger(z_command, 0);
 
-    if (zsocket_connect(z_command, "%s", uri)) {
+    if (zsock_connect(z_command, "%s", uri)) {
 	perror("connect");
 	return -EINVAL;
     }
-    zsocket_set_rcvtimeo (z_command, timeout * ZMQ_POLL_MSEC);
+    zsock_set_rcvtimeo (z_command, timeout * ZMQ_POLL_MSEC);
 
     return rtapi_ping(instance);
+}
+
+void rtapi_cleanup()
+{
+    if (z_command != NULL) {
+        zsock_destroy(&z_command);
+        z_command = NULL;
+    }
 }
